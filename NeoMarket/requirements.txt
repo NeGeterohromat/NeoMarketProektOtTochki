@@ -1,0 +1,3 @@
+django>=3.2.14
+django-environ
+psycopg2-binary
