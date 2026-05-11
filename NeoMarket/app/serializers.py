@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from app.models import Product, SKU, SKUCharacteristic
+from app.models import Product, SKU, SKUCharacteristic, ProductImage, ProductCharacteristic
 
 
 class SKUCharacteristicCreateSerializer(serializers.Serializer):
@@ -91,3 +91,39 @@ class SKUResponseSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         return []
+
+
+class ProductImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'url', 'ordering']
+
+
+class ProductCharacteristicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductCharacteristic
+        fields = ['id', 'name', 'value']
+
+
+class SKUInProductSerializer(serializers.ModelSerializer):
+    stock_quantity = serializers.IntegerField(source='active_quantity')
+
+    class Meta:
+        model = SKU
+        fields = ['id', 'name', 'price', 'stock_quantity', 'article']
+
+
+class ProductDetailSerializer(serializers.ModelSerializer):
+    seller_id = serializers.UUIDField(source='seller.id')
+    category_id = serializers.UUIDField(source='category.id')
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicSerializer(many=True)
+    skus = SKUInProductSerializer(many=True)
+
+    class Meta:
+        model = Product
+        fields = [
+            'id', 'seller_id', 'category_id', 'title',
+            'description', 'status', 'images', 'characteristics',
+            'skus', 'created_at', 'updated_at'
+        ]

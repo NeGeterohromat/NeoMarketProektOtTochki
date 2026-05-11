@@ -39,7 +39,10 @@ urlpatterns = [
 
     path('api/auth/', include('users.urls')),
     path('api/skus/', include('app.urls')),
+    path('api/products/', include('app.urls_products')),
 ]
+
+
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
