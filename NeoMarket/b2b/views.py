@@ -1,6 +1,6 @@
-from rest_framework import viewsets
-from app.models import Category
-from .serializers import CategorySerializer, CategoryDetailSerializer
+from rest_framework import viewsets, generics, permissions
+from app.models import Category, Product
+from .serializers import CategorySerializer, CategoryDetailSerializer, ProductCreateSerializer
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -23,3 +23,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
             serializer_class = CategoryDetailSerializer
         
         return serializer_class 
+    
+
+class ProductCreateAPIView(generics.CreateAPIView):
+    queryset = Product
+    serializer_class = ProductCreateSerializer
+    permission_classes = [permissions.IsAuthenticated,]
+
+    def perform_create(self, serializer):
+        return super().perform_create(serializer)
