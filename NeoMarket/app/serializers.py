@@ -64,7 +64,7 @@ class SKUCharacteristicResponseSerializer(serializers.ModelSerializer):
 
 class SKUResponseSerializer(serializers.ModelSerializer):
     seller_id = serializers.UUIDField(source='product.seller_id')
-    product_id = serializers.UUIDField(source='product_id')
+    product_id = serializers.UUIDField()
     stock_quantity = serializers.IntegerField(source='active_quantity')
     article = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()

@@ -52,18 +52,18 @@ def about(request):
     )
 
 
-@extend_schema(
-    operation_id='create_sku_api_skus_create_post',
-    summary='Создать SKU',
-    tags=['SKUs'],
-    request=SKUCreateSerializer,
-    responses={201: SKUResponseSerializer},
-)
 class CreateSKUView(generics.CreateAPIView):
     queryset = SKU.objects.all()
     permission_classes = (permissions.IsAuthenticated,)
     serializer_class = SKUCreateSerializer
 
+    @extend_schema(
+        operation_id='create_sku_api_skus_create_post',
+        summary='Создать SKU',
+        tags=['SKUs'],
+        request=SKUCreateSerializer,
+        responses={201: SKUResponseSerializer},
+    )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
