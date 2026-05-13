@@ -39,6 +39,7 @@ urlpatterns = [
 
     path('api/auth/', include('users.urls')),
     path('api/skus/', include('app.urls')),
+    path('api/', include('b2b.urls')),
 ]
 
 if settings.DEBUG:

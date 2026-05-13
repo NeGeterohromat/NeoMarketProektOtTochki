@@ -19,6 +19,8 @@ class ProductStatus(models.TextChoices):
 
 class Category(UUIDModel):
     name = models.CharField(max_length=255, unique=True, verbose_name="Название категории")
+    parent_id = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='subcategories')
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Категория"
