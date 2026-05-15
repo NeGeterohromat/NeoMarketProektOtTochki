@@ -68,7 +68,6 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     
 
 class SKUNestedSerializer(serializers.ModelSerializer):
-    stock_quantity = serializers.IntegerField(source='active_quantity')
     class Meta:
         model = SKU
         fields = ('id', 'name', 'price', 'stock_quantity', 'article',)
@@ -147,7 +146,6 @@ class SKUCharacteristicResponseSerializer(serializers.ModelSerializer):
 class SKUResponseSerializer(serializers.ModelSerializer):
     seller_id = serializers.UUIDField(source='product.seller_id')
     product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source='product')
-    stock_quantity = serializers.IntegerField(source='active_quantity')
     article = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
     characteristics = SKUCharacteristicResponseSerializer(many=True)
