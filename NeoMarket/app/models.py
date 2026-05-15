@@ -109,6 +109,7 @@ class SKU(UUIDModel):
     name = models.CharField(max_length=255, verbose_name="Название варианта (артикул/модификация)")
     price = models.PositiveIntegerField(verbose_name="Цена в копейках")
     active_quantity = models.PositiveIntegerField(default=0, verbose_name="Остаток на складе")
+    article = models.CharField(max_length=255, blank=True, verbose_name="Артикул")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 

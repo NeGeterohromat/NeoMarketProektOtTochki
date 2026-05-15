@@ -1,10 +1,17 @@
-from rest_framework import viewsets, generics, permissions
+from rest_framework import viewsets, generics, permissions, status
 from rest_framework.response import Response
 
 from drf_spectacular.utils import extend_schema
 
 from app.models import Category, Product, SKU
-from .serializers import CategorySerializer, CategoryDetailSerializer, ProductCreateSerializer, SKUCreateSerializer, SKUResponseSerializer
+from .serializers import (
+    CategorySerializer,
+    CategoryDetailSerializer,
+    ProductCreateSerializer,
+    ProductDetailSerializer,
+    SKUCreateSerializer,
+    SKUResponseSerializer
+)
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -34,9 +41,18 @@ class ProductCreateAPIView(generics.CreateAPIView):
     serializer_class = ProductCreateSerializer
     permission_classes = [permissions.IsAuthenticated,]
 
-    def perform_create(self, serializer):
-        return super().perform_create(serializer)
-    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        product = serializer.save()
+        response_serializer = ProductDetailSerializer(product, context=self.get_serializer_context())
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            response_serializer.data, 
+            status=status.HTTP_201_CREATED, 
+            headers=headers
+        )
+
 
 class CreateSKUView(generics.CreateAPIView):
     queryset = SKU.objects.all()

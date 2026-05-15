@@ -67,14 +67,22 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         return product
     
 
-# class ProductDetailSerializer(serializers.ModelSerializer):
-#     images = ProductImageSerializer(many=True)
-#     characteristics = ProductCharacteristicsSerializer(many=True)
-#     class Meta:
-#         model = Product
-#         fields = ('id', 'seller_id', 'category_id', 'title', 'description',
-#                   'status', 'images', 'characteristics',
-#                   'skus', 'created_at', 'updated_at')
+class SKUNestedSerializer(serializers.ModelSerializer):
+    stock_quantity = serializers.IntegerField(source='active_quantity')
+    class Meta:
+        model = SKU
+        fields = ('id', 'name', 'price', 'stock_quantity', 'article',)
+
+
+class ProductDetailSerializer(serializers.ModelSerializer):
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(many=True)
+    skus = SKUNestedSerializer(many=True)
+    class Meta:
+        model = Product
+        fields = ('id', 'seller_id', 'category_id', 'title', 'description',
+                  'status', 'images', 'characteristics',
+                  'skus', 'created_at', 'updated_at')
 
 
 class SKUCharacteristicCreateSerializer(serializers.Serializer):
