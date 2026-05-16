@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.validators import RegexValidator
 from rest_framework import serializers
 from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic
 
@@ -30,6 +31,9 @@ class ProductCharacteristicsSerializer(serializers.ModelSerializer):
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
+    url = serializers.CharField(validators=[
+        RegexValidator(regex=r'^(https?:\/\/|[.\/])\S+$', message='Неверно указан url')
+    ])
     class Meta:
         model = ProductImage
         fields = ('id', 'url', 'ordering')
@@ -37,8 +41,8 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    characteristics = ProductCharacteristicsSerializer(many=True)
-    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(required=False, many=True)
+    images = ProductImageSerializer(many=True, min_length=1)
     seller = serializers.HiddenField(default=serializers.CurrentUserDefault())
     category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category')
     class Meta:
