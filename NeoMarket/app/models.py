@@ -76,6 +76,12 @@ class ProductImage(UUIDModel):
         ordering = ["ordering"]
         verbose_name = "Изображение товара"
         verbose_name_plural = "Изображения товаров"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['product', 'ordering'], 
+                name='unique_product_ordering'
+            )
+        ]
 
     def __str__(self):
         return f"Изображение для {self.product.title} #{self.pk}"

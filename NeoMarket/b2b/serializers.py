@@ -49,6 +49,18 @@ class ProductCreateSerializer(serializers.ModelSerializer):
         model = Product
         fields = ('seller', 'category_id', 'title', 'description', 'images', 'characteristics',)
 
+    def validate(self, attrs):
+        images_data = attrs.get('images', [])
+        
+        # дубликаты ordering внутри запроса
+        orderings = [img.get('ordering') for img in images_data if img.get('ordering') is not None]
+        if len(orderings) != len(set(orderings)):
+            raise serializers.ValidationError({
+                "images": "В списке изображений присутствуют дубликаты порядковых номеров (ordering)."
+            })
+
+        return attrs
+
     def create(self, validated_data):
         characteristics_data = validated_data.pop('characteristics', [])
         images_data = validated_data.pop('images', [])
