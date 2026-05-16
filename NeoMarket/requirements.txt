@@ -3,3 +3,4 @@ django-environ
 psycopg2-binary
 djangorestframework==3.17.1
 drf-spectacular==0.29.0
+pytest-django==4.12.0
