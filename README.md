@@ -35,7 +35,27 @@ python manage.py migrate
 ```
 
 ## Запуск
-
+### Запуск дебаг сервера:
 ```sh
 python manage.py runserver
+```
+
+### Запуск тестов:
+
+Через django test:
+```sh
+# все тесты:
+python manage.py test
+
+# определённый класс тестов:
+python manage.py test <app_name>.tests.<TestCaseClassName>
+```
+
+Через pytest:
+```sh
+# все тесты:
+pytest
+
+# определённый класс тестов:
+pytest <app_name>/tests.py::<TestCaseClassName>
 ```
