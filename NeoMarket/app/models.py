@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class UUIDModel(models.Model):
@@ -199,3 +200,14 @@ class InvoiceItem(UUIDModel):
 
     def __str__(self):
         return f"{self.sku.name} × {self.quantity}"
+    
+
+class Moderation(UUIDModel):
+    class Events(models.TextChoices):
+        EDITED = "EDITED", "Отредактировано"
+
+    idempotency_key = models.UUIDField(default=uuid.uuid4)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation")
+    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="moderation")
+    event = models.CharField(max_length=32, choices=Events)
+    date = models.DateTimeField(default=timezone.now)

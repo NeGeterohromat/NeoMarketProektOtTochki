@@ -7,7 +7,7 @@ from app.models import Category, Product, SKU
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
-    ProductCreateSerializer,
+    ProductCreateUpdateSerializer,
     ProductDetailSerializer,
     SKUCreateSerializer,
     SKUResponseSerializer
@@ -37,8 +37,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
     
 
 class ProductCreateAPIView(generics.CreateAPIView):
-    queryset = Product
-    serializer_class = ProductCreateSerializer
+    queryset = Product.objects.all()
+    serializer_class = ProductCreateUpdateSerializer
     permission_classes = [permissions.IsAuthenticated,]
 
     def create(self, request, *args, **kwargs):
@@ -52,6 +52,22 @@ class ProductCreateAPIView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED, 
             headers=headers
         )
+    
+
+class ProductUpdateAPIView(generics.UpdateAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductCreateUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated,]
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        
+        instance = self.get_object()
+        
+        response_serializer = ProductDetailSerializer(instance, context=self.get_serializer_context())
+        
+        response.data = response_serializer.data
+        return response
 
 
 class CreateSKUView(generics.CreateAPIView):

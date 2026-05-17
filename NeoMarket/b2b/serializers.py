@@ -2,6 +2,7 @@ from django.db import transaction
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic
+from .services import handle_product_moderation_status
 
 
 # list (нужно добавить фильтр), post, вложенный в detail, patch
@@ -40,7 +41,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
-class ProductCreateSerializer(serializers.ModelSerializer):
+class ProductCreateUpdateSerializer(serializers.ModelSerializer):
     characteristics = ProductCharacteristicsSerializer(required=False, many=True)
     images = ProductImageSerializer(many=True, min_length=1)
     seller = serializers.HiddenField(default=serializers.CurrentUserDefault())
@@ -52,12 +53,13 @@ class ProductCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         images_data = attrs.get('images', [])
         
-        # дубликаты ordering внутри запроса
-        orderings = [img.get('ordering') for img in images_data if img.get('ordering') is not None]
-        if len(orderings) != len(set(orderings)):
-            raise serializers.ValidationError({
-                "images": "В списке изображений присутствуют дубликаты порядковых номеров (ordering)."
-            })
+        if images_data is not None:
+            # дубликаты ordering внутри запроса
+            orderings = [img.get('ordering') for img in images_data if img.get('ordering') is not None]
+            if len(orderings) != len(set(orderings)):
+                raise serializers.ValidationError({
+                    "images": "В списке изображений присутствуют дубликаты порядковых номеров (ordering)."
+                })
 
         return attrs
 
@@ -81,6 +83,36 @@ class ProductCreateSerializer(serializers.ModelSerializer):
             ProductImage.objects.bulk_create(image_objects)
 
         return product
+    
+    def update(self, instance, validated_data):
+        characteristics_data = validated_data.pop('characteristics', None)
+        images_data = validated_data.pop('images', None)
+
+        with transaction.atomic():
+            validated_data = handle_product_moderation_status(
+                product=instance,
+                user=self.context['request'].user,
+                validated_data=validated_data)
+            
+            instance = super().update(instance, validated_data)
+
+            if images_data is not None:
+                instance.images.all().delete()
+                image_objects = [
+                    ProductImage(product=instance, **img_data)
+                    for img_data in images_data
+                ]
+                ProductImage.objects.bulk_create(image_objects)
+
+            if characteristics_data is not None:
+                instance.characteristics.all().delete()
+                characteristic_objects = [
+                    ProductCharacteristic(product=instance, **char_data)
+                    for char_data in characteristics_data
+                ]
+                ProductCharacteristic.objects.bulk_create(characteristic_objects)
+
+        return instance
     
 
 class SKUNestedSerializer(serializers.ModelSerializer):
