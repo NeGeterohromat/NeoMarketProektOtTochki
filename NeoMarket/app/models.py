@@ -32,7 +32,7 @@ class Category(UUIDModel):
 
 class Product(UUIDModel):
     title = models.CharField(max_length=255, verbose_name="Название товара")
-    description = models.TextField(blank=True, default="", verbose_name="Описание")
+    description = models.TextField(max_length=5000, blank=True, default="", verbose_name="Описание")
     status = models.CharField(
         max_length=20,
         choices=ProductStatus.choices,
@@ -69,13 +69,19 @@ class ProductImage(UUIDModel):
         related_name="images",
         verbose_name="Товар"
     )
-    url = models.URLField(max_length=500, verbose_name="Ссылка на изображение")
+    url = models.CharField(max_length=500, verbose_name="Ссылка на изображение")
     ordering = models.PositiveIntegerField(default=0, verbose_name="Порядок отображения")
 
     class Meta:
         ordering = ["ordering"]
         verbose_name = "Изображение товара"
         verbose_name_plural = "Изображения товаров"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['product', 'ordering'], 
+                name='unique_product_ordering'
+            )
+        ]
 
     def __str__(self):
         return f"Изображение для {self.product.title} #{self.pk}"

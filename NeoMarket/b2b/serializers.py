@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.validators import RegexValidator
 from rest_framework import serializers
 from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic
 
@@ -30,6 +31,9 @@ class ProductCharacteristicsSerializer(serializers.ModelSerializer):
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
+    url = serializers.CharField(validators=[
+        RegexValidator(regex=r'^(https?:\/\/|[.\/])\S+$', message='Неверно указан url')
+    ])
     class Meta:
         model = ProductImage
         fields = ('id', 'url', 'ordering')
@@ -37,13 +41,25 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 
 class ProductCreateSerializer(serializers.ModelSerializer):
-    characteristics = ProductCharacteristicsSerializer(many=True)
-    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(required=False, many=True)
+    images = ProductImageSerializer(many=True, min_length=1)
     seller = serializers.HiddenField(default=serializers.CurrentUserDefault())
     category_id = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), source='category')
     class Meta:
         model = Product
         fields = ('seller', 'category_id', 'title', 'description', 'images', 'characteristics',)
+
+    def validate(self, attrs):
+        images_data = attrs.get('images', [])
+        
+        # дубликаты ordering внутри запроса
+        orderings = [img.get('ordering') for img in images_data if img.get('ordering') is not None]
+        if len(orderings) != len(set(orderings)):
+            raise serializers.ValidationError({
+                "images": "В списке изображений присутствуют дубликаты порядковых номеров (ordering)."
+            })
+
+        return attrs
 
     def create(self, validated_data):
         characteristics_data = validated_data.pop('characteristics', [])
