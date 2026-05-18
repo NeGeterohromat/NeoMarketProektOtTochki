@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.core.validators import RegexValidator
 from rest_framework import serializers
-from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic
+from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic, SKUImage
 from .services import handle_product_moderation_status
 
 
@@ -88,11 +88,11 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         characteristics_data = validated_data.pop('characteristics', None)
         images_data = validated_data.pop('images', None)
 
+        handle_product_moderation_status(product=instance)
+
         with transaction.atomic():
-            validated_data = handle_product_moderation_status(
-                product=instance,
-                user=self.context['request'].user,
-                validated_data=validated_data)
+            if instance.status in ['MODERATED', 'BLOCKED']:
+                validated_data['status'] = 'ON_MODERATION'
             
             instance = super().update(instance, validated_data)
 
@@ -137,9 +137,19 @@ class SKUCharacteristicCreateSerializer(serializers.Serializer):
     value = serializers.CharField()
 
 
-class SKUImageCreateSerializer(serializers.Serializer):
-    url = serializers.URLField()
-    ordering = serializers.IntegerField(required=False, default=0)
+# class SKUImageCreateSerializer(serializers.Serializer):
+#     url = serializers.URLField()
+#     ordering = serializers.IntegerField(required=False, default=0)
+
+
+class SKUImageSerializer(serializers.ModelSerializer):
+    url = serializers.CharField(validators=[
+        RegexValidator(regex=r'^(https?:\/\/|[.\/])\S+$', message='Неверно указан url')
+    ])
+    class Meta:
+        model = SKUImage
+        fields = ('id', 'url', 'ordering')
+        read_only_fields = ('id',)
 
 
 class SKUCreateSerializer(serializers.Serializer):
@@ -148,7 +158,7 @@ class SKUCreateSerializer(serializers.Serializer):
     price = serializers.IntegerField(min_value=0)
     stock_quantity = serializers.IntegerField(min_value=0, default=0, required=False)
     article = serializers.CharField(allow_null=True, allow_blank=True, required=False, default=None)
-    images = SKUImageCreateSerializer(many=True, required=False, default=list)
+    images = SKUImageSerializer(many=True, required=False, default=list)
     characteristics = SKUCharacteristicCreateSerializer(many=True, required=False, default=list)
 
     def validate_product_id(self, value):
@@ -176,7 +186,7 @@ class SKUCreateSerializer(serializers.Serializer):
             product=product,
             name=validated_data['name'],
             price=validated_data['price'],
-            active_quantity=validated_data.get('stock_quantity', 0),
+            stock_quantity=validated_data.get('stock_quantity', 0),
         )
 
         for characteristic_data in validated_data.get('characteristics', []):
@@ -185,10 +195,11 @@ class SKUCreateSerializer(serializers.Serializer):
         return sku
 
 
-class SKUCharacteristicResponseSerializer(serializers.ModelSerializer):
+class SKUCharacteristicSerializer(serializers.ModelSerializer):
     class Meta:
         model = SKUCharacteristic
         fields = ('id', 'name', 'value')
+        read_only_fields = ('id',)
 
 
 class SKUResponseSerializer(serializers.ModelSerializer):
@@ -196,7 +207,7 @@ class SKUResponseSerializer(serializers.ModelSerializer):
     product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source='product')
     article = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
-    characteristics = SKUCharacteristicResponseSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
 
     class Meta:
         model = SKU
@@ -219,3 +230,55 @@ class SKUResponseSerializer(serializers.ModelSerializer):
 
     def get_images(self, obj):
         return []
+
+
+class SKUUpdateSerializer(serializers.ModelSerializer):
+    images = SKUImageSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
+    class Meta:
+        model = SKU
+        fields = ('name', 'price', 'cost_price', 'discount',
+                  'images', 'characteristics')
+
+    def update(self, instance, validated_data):
+        characteristics_data = validated_data.pop('characteristics', None)
+        images_data = validated_data.pop('images', None)
+
+        handle_product_moderation_status(product=instance.product)
+
+        with transaction.atomic():
+            product = instance.product
+            if product.status in ['MODERATED', 'BLOCKED']:
+                product.status = 'ON_MODERATION'
+            product.save()
+            
+            instance = super().update(instance, validated_data)
+
+            if images_data is not None:
+                instance.images.all().delete()
+                image_objects = [
+                    SKUImage(sku=instance, **img_data)
+                    for img_data in images_data
+                ]
+                SKUImage.objects.bulk_create(image_objects)
+            
+            if characteristics_data is not None:
+                instance.characteristics.all().delete()
+                characteristic_objects = [
+                    SKUCharacteristic(sku=instance, **char_data)
+                    for char_data in characteristics_data
+                ]
+                SKUCharacteristic.objects.bulk_create(characteristic_objects)
+        
+        return instance
+    
+
+class SKUDetailSerializer(serializers.ModelSerializer):
+    images = SKUImageSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
+    class Meta:
+        model = SKU
+        fields = ('id', 'product', 'name', 'price', 'stock_quantity',
+                  'reserved_quantity', 'article', 'cost_price', 
+                  'discount', 'images', 'characteristics', 
+                  'created_at', 'updated_at')

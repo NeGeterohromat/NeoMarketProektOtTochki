@@ -4,13 +4,16 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 
 from app.models import Category, Product, SKU
+from .permissions import CanUpdateSKU, CanUpdateProduct
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
     ProductDetailSerializer,
     SKUCreateSerializer,
-    SKUResponseSerializer
+    SKUResponseSerializer,
+    SKUUpdateSerializer,
+    SKUDetailSerializer,
 )
 
 
@@ -57,7 +60,7 @@ class ProductCreateAPIView(generics.CreateAPIView):
 class ProductUpdateAPIView(generics.UpdateAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductCreateUpdateSerializer
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [permissions.IsAuthenticated, CanUpdateProduct]
 
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
@@ -89,3 +92,19 @@ class CreateSKUView(generics.CreateAPIView):
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=201, headers=headers)
+
+
+class SKUUpdateAPIView(generics.UpdateAPIView):
+    queryset = SKU.objects.all()
+    serializer_class = SKUUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated, CanUpdateSKU]
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        
+        instance = self.get_object()
+        
+        response_serializer = SKUDetailSerializer(instance, context=self.get_serializer_context())
+        
+        response.data = response_serializer.data
+        return response
