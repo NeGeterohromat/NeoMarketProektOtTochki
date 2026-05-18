@@ -17,9 +17,9 @@ def handle_product_moderation_status(product):
             "idempotency_key": str(uuid.uuid4()),
             "occurred_at": timezone.now().isoformat(),
             "payload": {
-                "product_id": product.pk,
-                "seller_id": product.seller.pk,
-                "category_id": product.category.pk,
+                "product_id": str(product.pk),
+                "seller_id": str(product.seller.pk),
+                "category_id": str(product.category.pk),
                 "queue_priority": 3,
                 "json_after": {
                     "additionalProp1": {}
