@@ -516,7 +516,7 @@ class SKUCreateAPITestCase(APITestCase):
         response = self.client.post(self.url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_no_image_returns_400(self):
+    def test_missing_image_returns_400(self):
         data = {
             "product_id": self.product.pk,
             "name": "string",
