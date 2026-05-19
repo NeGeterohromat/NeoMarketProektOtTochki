@@ -176,11 +176,14 @@ class SKUCreateSerializer(serializers.ModelSerializer):
         characteristics_data = validated_data.pop('characteristics', [])
         images_data = validated_data.pop('images', [])
 
+        product_status = None
+
         with transaction.atomic():
             sku = SKU.objects.create(**validated_data)
             
             product = sku.product
-            if product.status == 'CREATED':
+            product_status = product.status
+            if product_status == 'CREATED':
                 product.status = 'ON_MODERATION'
             product.save()
 
@@ -196,7 +199,8 @@ class SKUCreateSerializer(serializers.ModelSerializer):
             ]
             SKUImage.objects.bulk_create(image_objects)
 
-        handle_product_moderation_status(product=sku.product, status='CREATED')
+        if product_status == 'CREATED':
+            handle_product_moderation_status(product=sku.product, status='CREATED')
         
         return sku
 
