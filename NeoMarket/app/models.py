@@ -244,7 +244,7 @@ class Moderation(UUIDModel):
 
 
 class BlockingReason(UUIDModel):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="blocking_reasons")
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="blocking_reason")
     title = models.CharField(max_length=255)
     comment = models.TextField()
 

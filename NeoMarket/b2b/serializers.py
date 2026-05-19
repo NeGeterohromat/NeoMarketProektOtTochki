@@ -2,7 +2,17 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
-from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic, SKUImage
+from app.models import (
+    Category,
+    Product,
+    ProductCharacteristic,
+    ProductImage,
+    SKU,
+    SKUCharacteristic,
+    SKUImage,
+    BlockingReason,
+    FieldReport,
+)
 from .services import handle_product_moderation_status
 
 
@@ -263,3 +273,41 @@ class SKUDetailSerializer(serializers.ModelSerializer):
                   'reserved_quantity', 'article', 'cost_price', 
                   'discount', 'images', 'characteristics', 
                   'created_at', 'updated_at')
+
+
+class BlockingReasonSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlockingReason
+        fields = ('id', 'title', 'comment')
+
+
+class FieldReportSerializer(serializers.ModelSerializer):
+    sku_id = serializers.PrimaryKeyRelatedField(queryset=SKU.objects.all(), source='sku', allow_null=True)
+    class Meta:
+        model = FieldReport
+        fields = ('id', 'field_name', 'sku_id', 'comment')
+
+
+class SellerProductDetailSerializer(serializers.ModelSerializer):
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(many=True)
+    skus = SKUDetailSerializer(many=True)
+    blocking_reason = BlockingReasonSerializer(required=False)
+    field_reports = FieldReportSerializer(many=True, default=list)
+    class Meta:
+        model = Product
+        fields = ('id', 'seller_id', 'category_id', 'title', 'description',
+                  'status', 'moderator_comment', 'images', 'characteristics',
+                  'skus', 'blocking_reason', 'field_reports', 'created_at', 'updated_at')
+    
+
+class ModeratorSKUDetailSerializer(serializers.ModelSerializer):
+    images = SKUImageSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
+    class Meta:
+        model = SKU
+        fields = ('id', 'product', 'name', 'price', 'stock_quantity', 'article', 
+                  'discount', 'images', 'characteristics', 'created_at', 'updated_at')
+
+class ModeratorProductDetailSerializer(SellerProductDetailSerializer):
+    skus = ModeratorSKUDetailSerializer(many=True)

@@ -3,6 +3,35 @@ from rest_framework import permissions
 from app.models import ProductStatus, Product
 
 
+class IsAuthenticatedOrService(permissions.BasePermission):
+    """
+    Разрешает доступ, если пользователь авторизован через JWT 
+    ИЛИ если запрос пришел от микросервиса по X-Service-Key.
+    """
+    def has_permission(self, request, view):
+        if request.user and request.user.is_authenticated:
+            return True
+            
+        auth_data = request.auth
+        if isinstance(auth_data, dict) and auth_data.get('is_moderator_service') is True:
+            return True
+            
+        return False
+
+
+class IsSafeForModerator(permissions.BasePermission):
+    """Запрещает сервису модерации любые мутирующие (изменяющие) запросы."""
+    message = "Сервису модерации запрещено изменять данные."
+
+    def has_permission(self, request, view):
+        is_mod = hasattr(view, 'is_moderator') and view.is_moderator()
+        
+        if is_mod and request.method not in permissions.SAFE_METHODS:
+            return False
+            
+        return True
+
+
 class CanUpdateProduct(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user != obj.seller:

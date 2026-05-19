@@ -192,7 +192,7 @@ class ProductUpdateAPITestCase(APITestCase):
         )
 
     def test_edit_moderated_product_returns_to_on_moderation(self):
-        url = reverse('product-update', kwargs={'pk': self.moderated_product.pk})
+        url = reverse('product-detail', kwargs={'pk': self.moderated_product.pk})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
@@ -223,7 +223,7 @@ class ProductUpdateAPITestCase(APITestCase):
         self.assertEqual(response.data.get('status'), 'ON_MODERATION')
 
     def test_edit_blocked_product_returns_to_on_moderation(self):
-        url = reverse('product-update', kwargs={'pk': self.blocked_product.pk})
+        url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
@@ -254,7 +254,7 @@ class ProductUpdateAPITestCase(APITestCase):
         self.assertEqual(response.data.get('status'), 'ON_MODERATION')
 
     def test_edit_hard_blocked_returns_403(self):
-        url = reverse('product-update', kwargs={'pk': self.hard_blocked_product.pk})
+        url = reverse('product-detail', kwargs={'pk': self.hard_blocked_product.pk})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
@@ -276,7 +276,7 @@ class ProductUpdateAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_edit_others_product_returns_403(self):
-        url = reverse('product-update', kwargs={'pk': self.foreign_product.pk})
+        url = reverse('product-detail', kwargs={'pk': self.foreign_product.pk})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
@@ -298,7 +298,7 @@ class ProductUpdateAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_product_not_found_returns_404(self):
-        url = reverse('product-update', kwargs={'pk': 'aa712d8e-2e30-452c-b3bf-12806f5a0a3e'})
+        url = reverse('product-detail', kwargs={'pk': 'aa712d8e-2e30-452c-b3bf-12806f5a0a3e'})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
@@ -320,7 +320,7 @@ class ProductUpdateAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_invalid_data_returns_400(self):
-        url = reverse('product-update', kwargs={'pk': self.moderated_product.pk})
+        url = reverse('product-detail', kwargs={'pk': self.moderated_product.pk})
         data = {
             "title": "iPhone 15 Pro Max",
             "description": "Флагманский смартфон Apple 2024 года с чипом A17 Pro",
