@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic, SKUImage
@@ -88,7 +89,7 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
         characteristics_data = validated_data.pop('characteristics', None)
         images_data = validated_data.pop('images', None)
 
-        handle_product_moderation_status(product=instance)
+        product_status = instance.status
 
         with transaction.atomic():
             if instance.status in ['MODERATED', 'BLOCKED']:
@@ -112,6 +113,8 @@ class ProductCreateUpdateSerializer(serializers.ModelSerializer):
                 ]
                 ProductCharacteristic.objects.bulk_create(characteristic_objects)
 
+        handle_product_moderation_status(product=instance, status=product_status)
+
         return instance
     
 
@@ -132,14 +135,11 @@ class ProductDetailSerializer(serializers.ModelSerializer):
                   'skus', 'created_at', 'updated_at')
 
 
-class SKUCharacteristicCreateSerializer(serializers.Serializer):
-    name = serializers.CharField()
-    value = serializers.CharField()
-
-
-# class SKUImageCreateSerializer(serializers.Serializer):
-#     url = serializers.URLField()
-#     ordering = serializers.IntegerField(required=False, default=0)
+class SKUCharacteristicSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SKUCharacteristic
+        fields = ('id', 'name', 'value')
+        read_only_fields = ('id',)
 
 
 class SKUImageSerializer(serializers.ModelSerializer):
@@ -152,84 +152,63 @@ class SKUImageSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
-class SKUCreateSerializer(serializers.Serializer):
-    product_id = serializers.UUIDField()
-    name = serializers.CharField()
-    price = serializers.IntegerField(min_value=0)
-    stock_quantity = serializers.IntegerField(min_value=0, default=0, required=False)
-    article = serializers.CharField(allow_null=True, allow_blank=True, required=False, default=None)
-    images = SKUImageSerializer(many=True, required=False, default=list)
-    characteristics = SKUCharacteristicCreateSerializer(many=True, required=False, default=list)
-
-    def validate_product_id(self, value):
-        try:
-            product = Product.objects.get(id=value)
-        except Product.DoesNotExist:
-            raise serializers.ValidationError('Product not found.')
-
-        request = self.context.get('request')
-        if request is None or request.user.is_anonymous:
-            raise serializers.ValidationError('Authentication credentials were not provided.')
-
-        if product.seller_id != request.user.id:
-            raise serializers.ValidationError('Product does not belong to the authenticated seller.')
-
-        self._product = product
-        return value
-
-    def create(self, validated_data):
-        product = getattr(self, '_product', None)
-        if product is None:
-            product = Product.objects.get(id=validated_data['product_id'])
-
-        sku = SKU.objects.create(
-            product=product,
-            name=validated_data['name'],
-            price=validated_data['price'],
-            stock_quantity=validated_data.get('stock_quantity', 0),
-        )
-
-        for characteristic_data in validated_data.get('characteristics', []):
-            SKUCharacteristic.objects.create(sku=sku, **characteristic_data)
-
-        return sku
-
-
-class SKUCharacteristicSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SKUCharacteristic
-        fields = ('id', 'name', 'value')
-        read_only_fields = ('id',)
-
-
-class SKUResponseSerializer(serializers.ModelSerializer):
-    seller_id = serializers.UUIDField(source='product.seller_id')
-    product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source='product')
-    article = serializers.SerializerMethodField()
-    images = serializers.SerializerMethodField()
-    characteristics = SKUCharacteristicSerializer(many=True)
-
+class SKUCreateSerializer(serializers.ModelSerializer):
+    product_id = serializers.UUIDField(write_only=True)
+    images = SKUImageSerializer(many=True, min_length=1)
+    characteristics = SKUCharacteristicSerializer(many=True, required=False)
     class Meta:
         model = SKU
-        fields = (
-            'id',
-            'seller_id',
-            'product_id',
-            'name',
-            'price',
-            'stock_quantity',
-            'article',
-            'images',
-            'characteristics',
-            'created_at',
-            'updated_at',
-        )
+        fields = ('product_id', 'name', 'price', 'discount',
+                  'cost_price', 'article', 'images', 'characteristics')
 
-    def get_article(self, obj):
-        return None
+    def validate(self, attrs):
+        product_id = attrs.get('product_id')
+        product = get_object_or_404(Product, pk=product_id)
+        attrs['product'] = product
 
-    def get_images(self, obj):
-        return []
+        images_data = attrs.get('images', [])
+        
+        if images_data is not None:
+            # дубликаты ordering внутри запроса
+            orderings = [img.get('ordering') for img in images_data if img.get('ordering') is not None]
+            if len(orderings) != len(set(orderings)):
+                raise serializers.ValidationError({
+                    "images": "В списке изображений присутствуют дубликаты порядковых номеров (ordering)."
+                })
+
+        return attrs
+
+    def create(self, validated_data):
+        characteristics_data = validated_data.pop('characteristics', [])
+        images_data = validated_data.pop('images', [])
+
+        product_status = None
+
+        with transaction.atomic():
+            sku = SKU.objects.create(**validated_data)
+            
+            product = sku.product
+            product_status = product.status
+            if product_status == 'CREATED':
+                product.status = 'ON_MODERATION'
+            product.save()
+
+            characteristic_objects = [
+                SKUCharacteristic(sku=sku, **char_data)
+                for char_data in characteristics_data
+            ]
+            SKUCharacteristic.objects.bulk_create(characteristic_objects)
+
+            image_objects = [
+                SKUImage(sku=sku, **img_data)
+                for img_data in images_data
+            ]
+            SKUImage.objects.bulk_create(image_objects)
+
+        if product_status == 'CREATED':
+            handle_product_moderation_status(product=sku.product, status='CREATED')
+        
+        return sku
 
 
 class SKUUpdateSerializer(serializers.ModelSerializer):
@@ -244,7 +223,7 @@ class SKUUpdateSerializer(serializers.ModelSerializer):
         characteristics_data = validated_data.pop('characteristics', None)
         images_data = validated_data.pop('images', None)
 
-        handle_product_moderation_status(product=instance.product)
+        product_status = instance.product.status
 
         with transaction.atomic():
             product = instance.product
@@ -270,6 +249,8 @@ class SKUUpdateSerializer(serializers.ModelSerializer):
                 ]
                 SKUCharacteristic.objects.bulk_create(characteristic_objects)
         
+        handle_product_moderation_status(product=instance.product, status=product_status)
+
         return instance
     
 

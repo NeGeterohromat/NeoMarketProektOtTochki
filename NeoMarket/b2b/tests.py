@@ -1,4 +1,6 @@
+import responses
 from django.urls import reverse
+from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -325,6 +327,207 @@ class ProductUpdateAPITestCase(APITestCase):
             "category_id": "hello world",
         }
         response = self.client.put(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SKUCreateAPITestCase(APITestCase):
+    def setUp(self):
+        self.url = reverse('sku-create')
+        self.user = User.objects.create_user(
+            username='user',
+            password='12345678User',
+            email='user@mail.com',
+            company_name='urfu',
+        )
+        self.other_user = User.objects.create_user(
+            username='user2',
+            password='12345678User',
+            email='user2@mail.com',
+            company_name='urfu',
+        )
+
+        token = RefreshToken.for_user(self.user)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        self.category = Category.objects.create(name='category')
+
+        self.product = Product.objects.create(
+            title='iPhone 15 Pro Max',
+            description='Флагманский смартфон Apple 2024 года с чипом A17 Pro',
+            category=self.category,
+            seller=self.user,
+        )
+        self.other_product = Product.objects.create(
+            title='iPhone 15 Pro Max',
+            description='Флагманский смартфон Apple 2024 года с чипом A17 Pro',
+            category=self.category,
+            seller=self.other_user,
+        )
+    
+    def test_first_sku_transitions_product_to_on_moderation(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.product.refresh_from_db()    
+        self.assertEqual(self.product.status, 'ON_MODERATION')
+
+    @responses.activate
+    def test_first_sku_emits_created_event_to_moderation(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        base_url = settings.MODERATION_URL
+        mod_url = f"{base_url}/api/v1/b2b/events/"
+        responses.add(
+            method=responses.POST,
+            url=mod_url,
+            json={"status": "Request accepted for processing."},
+            status=status.HTTP_201_CREATED
+        )
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(responses.calls), 1)
+        executed_request = responses.calls[0].request
+        self.assertEqual(executed_request.url, mod_url)
+        self.assertEqual(executed_request.method, "POST")
+        import json
+        sent_body = json.loads(executed_request.body)
+        self.assertEqual(sent_body["event_type"], "PRODUCT_CREATED")
+
+    @responses.activate
+    def test_second_sku_no_state_change(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        base_url = settings.MODERATION_URL
+        mod_url = f"{base_url}/api/v1/b2b/events/"
+        responses.add(
+            method=responses.POST,
+            url=mod_url,
+            json={"status": "Request accepted for processing."},
+            status=status.HTTP_201_CREATED
+        )
+        # первый запрос
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # меняем статус, чтобы проверить, что втоой запрос его не изменит
+        self.product.status = 'MODERATED'
+        self.product.save()
+        # второй запрос
+        response = self.client.post(self.url, data, format='json')
+        # при втором запросе событие не уходит в Moderation:
+        self.assertEqual(len(responses.calls), 1)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, 'MODERATED')
+
+    def test_add_sku_to_hard_blocked_returns_403(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        self.product.status = 'HARD_BLOCKED'
+        self.product.save()
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_product_id_does_not_exist_returns_404(self):
+        data = {
+            "product_id": "aa712d8e-2e30-452c-b3bf-12806f5a0a3e",
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_price_below_zero_returns_400(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": -10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cost_price_below_zero_returns_400(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": -10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    
+    def test_empty_name_returns_400(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [{"url": "/s3/iphone15-front.jpg", "ordering": 0},],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_missing_image_returns_400(self):
+        data = {
+            "product_id": self.product.pk,
+            "name": "string",
+            "price": 10,
+            "discount": 10,
+            "cost_price": 10,
+            "article": "string",
+            "images": [],
+            "characteristics": [{"name": "Бренд", "value": "Apple"},]
+        }
+        response = self.client.post(self.url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 

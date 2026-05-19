@@ -4,8 +4,9 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers 
 
-def handle_product_moderation_status(product):
-    if product.status in ['MODERATED', 'BLOCKED']:
+def handle_product_moderation_status(product, status):
+    if status in ['MODERATED', 'BLOCKED', 'CREATED']:
+        event_type = 'PRODUCT_CREATED' if status == 'CREATED' else 'PRODUCT_EDITED'
         base_url = settings.MODERATION_URL
         url = f"{base_url}/api/v1/b2b/events/"
         headers = {
@@ -13,7 +14,7 @@ def handle_product_moderation_status(product):
             "Content-Type": "application/json"
         }
         payload = {
-            "event_type": "PRODUCT_EDITED",
+            "event_type": event_type,
             "idempotency_key": str(uuid.uuid4()),
             "occurred_at": timezone.now().isoformat(),
             "payload": {

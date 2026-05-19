@@ -4,14 +4,14 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 
 from app.models import Category, Product, SKU
-from .permissions import CanUpdateSKU, CanUpdateProduct
+from .permissions import CanCreateUpdateSKU, CanUpdateProduct
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
     ProductDetailSerializer,
     SKUCreateSerializer,
-    SKUResponseSerializer,
+    # SKUResponseSerializer,
     SKUUpdateSerializer,
     SKUDetailSerializer,
 )
@@ -73,32 +73,39 @@ class ProductUpdateAPIView(generics.UpdateAPIView):
         return response
 
 
-class CreateSKUView(generics.CreateAPIView):
+class SKUCreateAPIView(generics.CreateAPIView):
     queryset = SKU.objects.all()
-    permission_classes = (permissions.IsAuthenticated,)
     serializer_class = SKUCreateSerializer
+    permission_classes = [permissions.IsAuthenticated, CanCreateUpdateSKU]
 
     @extend_schema(
         operation_id='create_sku_api_skus_create_post',
         summary='Создать SKU',
         tags=['SKUs'],
         request=SKUCreateSerializer,
-        responses={201: SKUResponseSerializer},
+        responses={201: SKUDetailSerializer},
     )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=422)
-        self.perform_create(serializer)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        response_serializer = SKUDetailSerializer(instance, context=self.get_serializer_context())
         headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=201, headers=headers)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class SKUUpdateAPIView(generics.UpdateAPIView):
     queryset = SKU.objects.all()
     serializer_class = SKUUpdateSerializer
-    permission_classes = [permissions.IsAuthenticated, CanUpdateSKU]
+    permission_classes = [permissions.IsAuthenticated, CanCreateUpdateSKU]
 
+    @extend_schema(
+        operation_id='update_sku_api_skus_update_post',
+        summary='Обновить SKU',
+        tags=['SKUs'],
+        request=SKUCreateSerializer,
+        responses={200: SKUDetailSerializer},
+    )
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
         
