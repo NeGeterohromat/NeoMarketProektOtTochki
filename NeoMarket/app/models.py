@@ -53,6 +53,7 @@ class Product(UUIDModel):
         related_name="products",
         verbose_name="Продавец"
     )
+    moderator_comment = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
@@ -240,3 +241,16 @@ class Moderation(UUIDModel):
     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="moderation")
     event = models.CharField(max_length=32, choices=Events)
     date = models.DateTimeField(default=timezone.now)
+
+
+class BlockingReason(UUIDModel):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="blocking_reasons")
+    title = models.CharField(max_length=255)
+    comment = models.TextField()
+
+
+class FieldReport(UUIDModel):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="field_reports")
+    field_name = models.CharField(max_length=255)
+    sku = models.ForeignKey(SKU, blank=True, null=True, on_delete=models.CASCADE, related_name="field_reports")
+    comment = models.TextField()
