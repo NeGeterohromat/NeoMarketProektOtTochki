@@ -119,7 +119,7 @@ class SKU(UUIDModel):
     stock_quantity = models.PositiveIntegerField(default=0, verbose_name="Остаток на складе")
     reserved_quantity = models.PositiveIntegerField(blank=True, default=0, verbose_name="Остаток на складе")
     article = models.CharField(max_length=255, blank=True, verbose_name="Артикул")
-    cost_price = models.PositiveIntegerField(blank=True, default=0, verbose_name="Себестоимость в копейках")
+    cost_price = models.PositiveIntegerField(default=0, verbose_name="Себестоимость в копейках")
     discount = models.PositiveIntegerField(blank=True, default=0, verbose_name="Скидка")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
