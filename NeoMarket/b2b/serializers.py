@@ -154,7 +154,7 @@ class SKUImageSerializer(serializers.ModelSerializer):
 
 class SKUCreateSerializer(serializers.ModelSerializer):
     product_id = serializers.UUIDField(write_only=True)
-    images = SKUImageSerializer(many=True)
+    images = SKUImageSerializer(many=True, min_length=1)
     characteristics = SKUCharacteristicSerializer(many=True, required=False)
     class Meta:
         model = SKU
