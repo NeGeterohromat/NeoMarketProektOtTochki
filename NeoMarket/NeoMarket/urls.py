@@ -34,11 +34,11 @@ urlpatterns = [
     path('logout/', LogoutView.as_view(next_page='/'), name='logout'),
     path('admin/', admin.site.urls),
 
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
 
-    path('api/auth/', include('users.urls')),
-    path('api/', include('b2b.urls')),
+    path('api/v1/auth/', include('users.urls')),
+    path('api/v1/', include('b2b.urls')),
 ]
 
 if settings.DEBUG:
