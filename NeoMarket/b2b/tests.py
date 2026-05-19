@@ -4,7 +4,7 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-from app.models import Product, Category, SKU
+from app.models import Product, Category, SKU, BlockingReason, FieldReport
 from users.models import User
 
 
@@ -327,6 +327,71 @@ class ProductUpdateAPITestCase(APITestCase):
             "category_id": "hello world",
         }
         response = self.client.put(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ProductRetrieveAPITestCase(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user',
+            password='12345678User',
+            email='user@mail.com',
+            company_name='urfu',
+        )
+        self.other_user = User.objects.create_user(
+            username='user2',
+            password='12345678User',
+            email='user2@mail.com',
+            company_name='urfu',
+        )
+
+        token = RefreshToken.for_user(self.user)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        self.category = Category.objects.create(name='category')
+
+        self.product = Product.objects.create(title='string', description='string',
+                                              category=self.category, seller=self.user)
+        
+        self.other_product = Product.objects.create(title='string', description='string',
+                                              category=self.category, seller=self.other_user)
+        
+        self.sku = SKU.objects.create(product=self.product, name='sku1', price=10,
+                                      cost_price=10, article="hello", reserved_quantity=999)
+        self.blocked_product = Product.objects.create(title='string', description='string',
+                                              category=self.category, seller=self.user, status="BLOCKED")
+        self.blocking_reason = BlockingReason.objects.create(product=self.blocked_product, title='string', comment='string')
+        self.field_report = FieldReport.objects.create(product=self.blocked_product, field_name='string', comment='string')
+        
+    def test_get_moderated_product_returns_full_payload(self):
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        self.product.status = "MODERATED"
+        self.product.save()
+        response = self.client.get(url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('skus')[0].get('cost_price'), 10)
+        self.assertEqual(response.data.get('blocking_reason'), None)
+
+    def test_get_blocked_product_returns_blocking_reason_and_field_reports(self):
+        url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
+        response = self.client.get(url, format='json')
+        self.assertEqual(response.data.get('blocking_reason').get('title'), self.blocking_reason.title)
+        self.assertEqual(response.data.get('field_reports')[0].get('field_name'), self.field_report.field_name)
+
+    def test_get_others_product_returns_404(self):
+        url = reverse('product-detail', kwargs={'pk': self.other_product.pk})
+        response = self.client.get(url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_nonexistent_returns_404(self):
+        url = reverse('product-detail', kwargs={'pk': 'b691aea1-93d5-44ca-8feb-0a72d5e33f44'})
+        response = self.client.get(url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        
+    def test_invalid_uuid_returns_400(self):
+        url = url = '/api/v1/products/helloworld/'
+        response = self.client.get(url, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 

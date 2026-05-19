@@ -1,5 +1,7 @@
+import uuid
 from rest_framework import viewsets, generics, permissions, status
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from drf_spectacular.utils import extend_schema, extend_schema_view
@@ -118,7 +120,15 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
         if self.is_update_method():
             return [permissions.IsAuthenticated(), IsSafeForModerator(), CanUpdateProduct()]
         return [IsAuthenticatedOrService()]
-
+    
+    def get_object(self):
+        pk = self.kwargs.get('pk')
+        try:
+            uuid.UUID(str(pk))  # Проверяем, является ли строка валидным UUID
+        except ValueError:
+            raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
+            
+        return super().get_object()
 
 
 class SKUCreateAPIView(generics.CreateAPIView):
