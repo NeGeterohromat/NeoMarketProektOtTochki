@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class UUIDModel(models.Model):
@@ -15,6 +16,7 @@ class ProductStatus(models.TextChoices):
     ON_MODERATION = "ON_MODERATION", "На модерации"
     MODERATED = "MODERATED", "Опубликован"
     BLOCKED = "BLOCKED", "Заблокирован"
+    HARD_BLOCKED = "HARD_BLOCKED", "Жестко заблокирован"
 
 
 class Category(UUIDModel):
@@ -115,7 +117,10 @@ class SKU(UUIDModel):
     name = models.CharField(max_length=255, verbose_name="Название варианта (артикул/модификация)")
     price = models.PositiveIntegerField(verbose_name="Цена в копейках")
     stock_quantity = models.PositiveIntegerField(default=0, verbose_name="Остаток на складе")
+    reserved_quantity = models.PositiveIntegerField(blank=True, default=0, verbose_name="Остаток на складе")
     article = models.CharField(max_length=255, blank=True, verbose_name="Артикул")
+    cost_price = models.PositiveIntegerField(blank=True, default=0, verbose_name="Себестоимость в копейках")
+    discount = models.PositiveIntegerField(blank=True, default=0, verbose_name="Скидка")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 
@@ -125,6 +130,31 @@ class SKU(UUIDModel):
 
     def __str__(self):
         return f"{self.product.title} — {self.name}"
+
+
+class SKUImage(UUIDModel):
+    sku = models.ForeignKey(
+        SKU,
+        on_delete=models.CASCADE,
+        related_name="images",
+        verbose_name="SKU"
+    )
+    url = models.CharField(max_length=500, verbose_name="Ссылка на изображение")
+    ordering = models.PositiveIntegerField(default=0, verbose_name="Порядок отображения")
+
+    class Meta:
+        ordering = ["ordering"]
+        verbose_name = "Изображение SKU"
+        verbose_name_plural = "Изображения SKU"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['sku', 'ordering'], 
+                name='unique_sku_ordering'
+            )
+        ]
+
+    def __str__(self):
+        return f"Изображение для {self.product.title} #{self.pk}"
 
 
 class SKUCharacteristic(UUIDModel):
@@ -199,3 +229,14 @@ class InvoiceItem(UUIDModel):
 
     def __str__(self):
         return f"{self.sku.name} × {self.quantity}"
+    
+
+class Moderation(UUIDModel):
+    class Events(models.TextChoices):
+        EDITED = "EDITED", "Отредактировано"
+
+    idempotency_key = models.UUIDField(default=uuid.uuid4)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation")
+    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="moderation")
+    event = models.CharField(max_length=32, choices=Events)
+    date = models.DateTimeField(default=timezone.now)

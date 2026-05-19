@@ -17,6 +17,8 @@ DB_USER=myuser
 DB_PASSWORD=mypassword
 DB_HOST=localhost
 DB_PORT=5432
+MODERATION_URL=http://127.0.0.1:8080
+MODERATION_TOKEN=<X-Service-Key>
 ```
 
 Развернуть PostgreSQL можно из Docker
