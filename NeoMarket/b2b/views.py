@@ -86,11 +86,12 @@ class SKUCreateAPIView(generics.CreateAPIView):
         responses={201: SKUDetailSerializer},
     )
     def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        instance = self.get_object()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
         response_serializer = SKUDetailSerializer(instance, context=self.get_serializer_context())
-        response.data = response_serializer.data
-        return response
+        headers = self.get_success_headers(serializer.data)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class SKUUpdateAPIView(generics.UpdateAPIView):
