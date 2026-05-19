@@ -156,7 +156,7 @@ class SKUCreateSerializer(serializers.ModelSerializer):
     characteristics = SKUCharacteristicSerializer(many=True, required=False)
     class Meta:
         model = SKU
-        fields = ('product_id', 'name', 'price', 'discount',
+        fields = ('product', 'name', 'price', 'discount',
                   'cost_price', 'article', 'images', 'characteristics')
 
     def validate(self, attrs):
