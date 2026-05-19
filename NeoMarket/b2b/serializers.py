@@ -152,11 +152,12 @@ class SKUImageSerializer(serializers.ModelSerializer):
 
 
 class SKUCreateSerializer(serializers.ModelSerializer):
+    product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source='product')
     images = SKUImageSerializer(many=True)
     characteristics = SKUCharacteristicSerializer(many=True, required=False)
     class Meta:
         model = SKU
-        fields = ('product', 'name', 'price', 'discount',
+        fields = ('product_id', 'name', 'price', 'discount',
                   'cost_price', 'article', 'images', 'characteristics')
 
     def validate(self, attrs):
