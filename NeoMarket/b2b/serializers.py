@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
 from app.models import Category, Product, ProductCharacteristic, ProductImage, SKU, SKUCharacteristic, SKUImage
@@ -152,7 +153,7 @@ class SKUImageSerializer(serializers.ModelSerializer):
 
 
 class SKUCreateSerializer(serializers.ModelSerializer):
-    product_id = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all(), source='product')
+    product_id = serializers.UUIDField(write_only=True)
     images = SKUImageSerializer(many=True)
     characteristics = SKUCharacteristicSerializer(many=True, required=False)
     class Meta:
@@ -161,6 +162,10 @@ class SKUCreateSerializer(serializers.ModelSerializer):
                   'cost_price', 'article', 'images', 'characteristics')
 
     def validate(self, attrs):
+        product_id = attrs.get('product_id')
+        product = get_object_or_404(Product, pk=product_id)
+        attrs['product'] = product
+
         images_data = attrs.get('images', [])
         
         if images_data is not None:
