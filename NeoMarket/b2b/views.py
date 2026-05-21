@@ -1,15 +1,21 @@
+import uuid
 from rest_framework import viewsets, generics, permissions, status
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from app.models import Category, Product, SKU
-from .permissions import CanCreateUpdateSKU, CanUpdateProduct
+from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator
+from .authentication import ServiceKeyAuthentication
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
     ProductDetailSerializer,
+    SellerProductDetailSerializer,
+    ModeratorProductDetailSerializer,
     SKUCreateSerializer,
     # SKUResponseSerializer,
     SKUUpdateSerializer,
@@ -57,20 +63,72 @@ class ProductCreateAPIView(generics.CreateAPIView):
         )
     
 
-class ProductUpdateAPIView(generics.UpdateAPIView):
+@extend_schema_view(
+    get=extend_schema(
+        responses={
+            200: SellerProductDetailSerializer,
+        }
+    ),
+    put=extend_schema(
+        request=ProductCreateUpdateSerializer,
+        responses={200: SellerProductDetailSerializer}
+    ),
+    patch=extend_schema(
+        request=ProductCreateUpdateSerializer,
+        responses={200: SellerProductDetailSerializer}
+    )
+)
+class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
     queryset = Product.objects.all()
+    authentication_classes = [ServiceKeyAuthentication, JWTAuthentication,]
     serializer_class = ProductCreateUpdateSerializer
-    permission_classes = [permissions.IsAuthenticated, CanUpdateProduct]
 
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
-        
         instance = self.get_object()
-        
         response_serializer = ProductDetailSerializer(instance, context=self.get_serializer_context())
-        
         response.data = response_serializer.data
         return response
+    
+    def is_moderator(self):
+        auth_data = self.request.auth
+        return isinstance(auth_data, dict) and auth_data.get('is_moderator_service') is True
+    
+    def is_get_method(self):
+        return self.request.method == 'GET'
+    
+    def is_update_method(self):
+        return self.request.method in ['PUT', 'PATCH']
+    
+    def get_queryset(self):
+        if self.is_get_method() and self.is_moderator() or self.is_update_method():
+            return Product.objects.all()
+        user = self.request.user
+        if user.is_authenticated:
+            return Product.objects.filter(seller=user)
+        return Product.objects.none()
+    
+    def get_serializer_class(self):
+        if self.is_update_method():
+            return ProductCreateUpdateSerializer
+        if self.is_moderator():
+            return ModeratorProductDetailSerializer
+        return SellerProductDetailSerializer
+    
+    def get_permissions(self):
+        """Динамически назначаем права доступа в зависимости от метода запроса."""
+        if self.is_update_method():
+            return [permissions.IsAuthenticated(), IsSafeForModerator(), CanUpdateProduct()]
+        return [IsAuthenticatedOrService()]
+    
+    def get_object(self):
+        pk = self.kwargs.get('pk')
+        try:
+            uuid.UUID(str(pk))  # Проверяем, является ли строка валидным UUID
+        except ValueError:
+            raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
+            
+        return super().get_object()
 
 
 class SKUCreateAPIView(generics.CreateAPIView):
