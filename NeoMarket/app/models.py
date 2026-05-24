@@ -54,6 +54,8 @@ class Product(UUIDModel):
         verbose_name="Продавец"
     )
     moderator_comment = models.TextField(blank=True)
+    deleted = models.BooleanField(blank=True, default=False)
+    slug = models.SlugField(max_length=255, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
 

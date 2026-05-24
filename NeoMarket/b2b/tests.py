@@ -376,7 +376,7 @@ class ProductRetrieveAPITestCase(APITestCase):
     def test_get_blocked_product_returns_blocking_reason_and_field_reports(self):
         url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
         response = self.client.get(url, format='json')
-        self.assertEqual(response.data.get('blocking_reason').get('title'), self.blocking_reason.title)
+        self.assertEqual(response.data.get('blocking_reason_id'), self.blocking_reason.pk)
         self.assertEqual(response.data.get('field_reports')[0].get('field_name'), self.field_report.field_name)
 
     def test_get_others_product_returns_404(self):

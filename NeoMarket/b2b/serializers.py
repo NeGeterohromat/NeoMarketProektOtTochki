@@ -134,6 +134,7 @@ class SKUNestedSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'price', 'stock_quantity', 'article',)
 
 
+# использовать SellerProductDetailSerializer вместо данного сериализатора
 class ProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True)
     characteristics = ProductCharacteristicsSerializer(many=True)
@@ -292,13 +293,14 @@ class SellerProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True)
     characteristics = ProductCharacteristicsSerializer(many=True)
     skus = SKUDetailSerializer(many=True)
-    blocking_reason = BlockingReasonSerializer(required=False)
+    # blocking_reason = BlockingReasonSerializer(required=False)
+    blocking_reason_id = serializers.PrimaryKeyRelatedField(source='blocking_reason', read_only=True)
     field_reports = FieldReportSerializer(many=True, default=list)
     class Meta:
         model = Product
         fields = ('id', 'seller_id', 'category_id', 'title', 'description',
                   'status', 'moderator_comment', 'images', 'characteristics',
-                  'skus', 'blocking_reason', 'field_reports', 'created_at', 'updated_at')
+                  'skus', 'blocking_reason_id', 'field_reports', 'created_at', 'updated_at')
     
 
 class ModeratorSKUDetailSerializer(serializers.ModelSerializer):
