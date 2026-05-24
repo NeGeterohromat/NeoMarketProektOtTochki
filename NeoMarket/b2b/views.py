@@ -54,7 +54,7 @@ class ProductCreateAPIView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
-        response_serializer = ProductDetailSerializer(product, context=self.get_serializer_context())
+        response_serializer = SellerProductDetailSerializer(product, context=self.get_serializer_context())
         headers = self.get_success_headers(serializer.data)
         return Response(
             response_serializer.data, 
@@ -86,7 +86,7 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
         instance = self.get_object()
-        response_serializer = ProductDetailSerializer(instance, context=self.get_serializer_context())
+        response_serializer = SellerProductDetailSerializer(instance, context=self.get_serializer_context())
         response.data = response_serializer.data
         return response
     
