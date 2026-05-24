@@ -268,12 +268,16 @@ class SKUUpdateSerializer(serializers.ModelSerializer):
 class SKUDetailSerializer(serializers.ModelSerializer):
     images = SKUImageSerializer(many=True)
     characteristics = SKUCharacteristicSerializer(many=True)
+    active_quantity = serializers.SerializerMethodField()
     class Meta:
         model = SKU
-        fields = ('id', 'product', 'name', 'price', 'stock_quantity',
-                  'reserved_quantity', 'article', 'cost_price', 
+        fields = ('id', 'product_id', 'name', 'price', 'stock_quantity',
+                  'reserved_quantity', 'active_quantity', 'article', 'cost_price', 
                   'discount', 'images', 'characteristics', 
                   'created_at', 'updated_at')
+        
+    def get_active_quantity(self, obj):
+        return obj.stock_quantity - obj.reserved_quantity
 
 
 class BlockingReasonSerializer(serializers.ModelSerializer):
@@ -306,10 +310,14 @@ class SellerProductDetailSerializer(serializers.ModelSerializer):
 class ModeratorSKUDetailSerializer(serializers.ModelSerializer):
     images = SKUImageSerializer(many=True)
     characteristics = SKUCharacteristicSerializer(many=True)
+    active_quantity = serializers.SerializerMethodField()
     class Meta:
         model = SKU
-        fields = ('id', 'product', 'name', 'price', 'stock_quantity', 'article', 
+        fields = ('id', 'product_id', 'name', 'price', 'stock_quantity', 'active_quantity', 'article', 
                   'discount', 'images', 'characteristics', 'created_at', 'updated_at')
+        
+    def get_active_quantity(self, obj):
+        return obj.stock_quantity - obj.reserved_quantity
 
 class ModeratorProductDetailSerializer(SellerProductDetailSerializer):
     skus = ModeratorSKUDetailSerializer(many=True)
