@@ -326,7 +326,7 @@ class B2CListProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Product
-        fields = ('id', 'category_id', 'title', 'description', 'slug', 'cover_image', 'min_price',
+        fields = ('id', 'seller_id', 'category_id', 'title', 'description', 'slug', 'cover_image', 'min_price',
                   'status', 'characteristics', 'skus', 'created_at')
     
     def get_cover_image(self, obj):

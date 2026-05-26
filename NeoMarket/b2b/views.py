@@ -16,7 +16,7 @@ from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
-    ProductDetailSerializer,
+    # ProductDetailSerializer,
     SellerProductDetailSerializer,
     ModeratorProductDetailSerializer,
     SKUCreateSerializer,
@@ -135,8 +135,6 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
             
         return super().get_object()
-
-
 
 
 class B2CListProductAPIView(generics.ListAPIView):
