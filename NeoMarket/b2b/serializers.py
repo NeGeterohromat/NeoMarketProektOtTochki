@@ -303,7 +303,7 @@ class SellerProductDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ('id', 'seller_id', 'category_id', 'title', 'description',
-                  'status', 'moderator_comment', 'images', 'characteristics',
+                  'status', 'moderator_comment', 'images', 'characteristics', 'deleted', 'slug',
                   'skus', 'blocking_reason_id', 'field_reports', 'created_at', 'updated_at')
     
 
