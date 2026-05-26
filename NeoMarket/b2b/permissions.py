@@ -29,7 +29,14 @@ class IsSafeForModerator(permissions.BasePermission):
         if is_mod and request.method not in permissions.SAFE_METHODS:
             return False
             
-        return True
+        return False
+
+
+class IsService(permissions.BasePermission):
+    """Разрешает доступ только сервисам по X-Service-Key (без JWT)."""
+    def has_permission(self, request, view):
+        auth_data = request.auth
+        return isinstance(auth_data, dict) and auth_data.get('is_moderator_service') is True
 
 
 class CanUpdateProduct(permissions.BasePermission):

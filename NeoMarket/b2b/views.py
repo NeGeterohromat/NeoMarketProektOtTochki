@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from app.models import Category, Product, SKU
-from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator
+from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
     CategorySerializer,
@@ -138,6 +138,9 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
 
 
 class B2CListProductAPIView(generics.ListAPIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    
     queryset = Product.objects.filter(
         status="MODERATED", 
         deleted=False,
