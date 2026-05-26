@@ -1,5 +1,8 @@
 import uuid
-from rest_framework import viewsets, generics, permissions, status
+
+from django.db.models import Min
+
+from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -20,7 +23,10 @@ from .serializers import (
     # SKUResponseSerializer,
     SKUUpdateSerializer,
     SKUDetailSerializer,
+    B2CListProductSerializer,
 )
+from .pagination import B2CProductPagination
+from .filters import B2CProductFilter
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -129,6 +135,41 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
             
         return super().get_object()
+
+
+
+
+class B2CListProductAPIView(generics.ListAPIView):
+    queryset = Product.objects.filter(
+        status="MODERATED", 
+        deleted=False,
+        skus__active_quantity__gt=0
+    ).prefetch_related('skus', 'images').annotate(min_price=Min('skus__price'))
+    serializer_class = B2CListProductSerializer
+    pagination_class = B2CProductPagination
+    filterset_class = B2CProductFilter
+    filter_backends = [drf_filters.OrderingFilter]
+    ordering_fields = ['min_price', 'created_at']
+    ordering = ['-created_at']
+    ordering_param = 'sort'
+
+    def get_ordering(self):
+        """Преобразуем имена сортировки в реальные поля Django."""
+        orderings = super().get_ordering()
+        if not orderings:
+            return self.ordering
+        
+        result = []
+        for ordering in orderings:
+            if ordering == 'price_asc':
+                result.append('min_price')
+            elif ordering == 'price_desc':
+                result.append('-min_price')
+            elif ordering == 'date_desc':
+                result.append('-created_at')
+            else:
+                result.append(ordering)
+        return result
 
 
 class SKUCreateAPIView(generics.CreateAPIView):

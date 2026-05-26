@@ -142,8 +142,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
         fields = ('id', 'seller_id', 'category_id', 'title', 'description',
-                  'status', 'images', 'characteristics',
-                  'skus', 'created_at', 'updated_at')
+                  'status', 'images', 'characteristics', 'skus', 'created_at', 'updated_at')
 
 
 class SKUCharacteristicSerializer(serializers.ModelSerializer):
@@ -318,3 +317,19 @@ class ModeratorSKUDetailSerializer(serializers.ModelSerializer):
 
 class ModeratorProductDetailSerializer(SellerProductDetailSerializer):
     skus = ModeratorSKUDetailSerializer(many=True)
+
+
+class B2CListProductSerializer(serializers.ModelSerializer):
+    skus = ModeratorSKUDetailSerializer(many=True)
+    cover_image = serializers.SerializerMethodField()
+    min_price = serializers.IntegerField()
+    
+    class Meta:
+        model = Product
+        fields = ('id', 'category_id', 'title', 'description', 'slug', 'cover_image', 'min_price',
+                  'status', 'characteristics', 'skus', 'created_at')
+    
+    def get_cover_image(self, obj):
+        # images уже предзагружены через prefetch_related('images')
+        image = obj.images.order_by('ordering').first()
+        return image.url if image else None
