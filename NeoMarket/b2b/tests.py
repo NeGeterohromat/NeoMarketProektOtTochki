@@ -803,6 +803,20 @@ class B2CListProductAPITestCase(APITestCase):
             stock_quantity=10
         )
 
+        self.hard_blocked_product = Product.objects.create(
+            title='Hard blocked Phone',
+            description='Hard blocked item',
+            category=self.category1,
+            seller=self.user,
+            status='HARD_BLOCKED'
+        )
+        self.hard_blocked_sku = SKU.objects.create(
+            product=self.hard_blocked_product,
+            name='64GB',
+            price=50000,
+            stock_quantity=10
+        )
+
         # Product with same seller
         self.same_seller_product = Product.objects.create(
             title='Samsung Galaxy',
@@ -842,8 +856,8 @@ class B2CListProductAPITestCase(APITestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_returns_only_moderated_products(self):
-        """Возвращаются только MODERATED товары"""
+    def test_catalog_returns_moderated_in_stock_products(self):
+        """Возвращаются только MODERATED товары с active_quantity > 0"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         titles = [p['title'] for p in response.data['results']]
@@ -851,16 +865,22 @@ class B2CListProductAPITestCase(APITestCase):
         self.assertIn('Samsung Galaxy', titles)
         self.assertIn('Sony Xperia', titles)
         self.assertNotIn('Blocked Phone', titles)
+        self.assertNotIn('iPhone 14', titles)
 
-    def test_returns_only_products_with_active_sku(self):
-        """Возвращаются только товары с active_quantity > 0"""
+    def test_catalog_excludes_hard_blocked(self):
+        """Заблокированные товары не возвращаются"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         titles = [p['title'] for p in response.data['results']]
-        self.assertIn('iPhone 15', titles)  # active_quantity = 10
-        self.assertIn('Samsung Galaxy', titles)  # active_quantity = 15
-        self.assertIn('Sony Xperia', titles)  # active_quantity = 20
-        self.assertNotIn('iPhone 14', titles)  # active_quantity = 0 (5 reserved)
+        self.assertNotIn('Blocked Phone', titles)
+        self.assertNotIn('Hard blocked Phone', titles)
+
+    def test_catalog_response_has_no_cost_price(self):
+        """cost_price не возвращается"""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        self.assertEqual(iphone.get('cost_price'), None)
 
     def test_cover_image_returns_first_image_by_order(self):
         """cover_image берёт изображение с наименьшим order"""
@@ -917,7 +937,7 @@ class B2CListProductAPITestCase(APITestCase):
         self.assertEqual(len(response.data['results']), 1)
         self.assertEqual(response.data['results'][0]['id'], str(self.moderated_product.pk))
 
-    def test_filter_by_ids_multiple(self):
+    def test_batch_ids_returns_visible_subset(self):
         """Фильтрация по нескольким UUID"""
         response = self.client.get(self.url + f'?ids={self.moderated_product.pk},{self.same_seller_product.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
