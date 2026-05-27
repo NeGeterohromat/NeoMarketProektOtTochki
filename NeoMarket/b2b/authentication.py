@@ -15,4 +15,4 @@ class ServiceKeyAuthentication(BaseAuthentication):
 
         # Возвращаем кастомный флаг в кортеже Auth, чтобы отличать модератора
         # Вместо None передаем словарь или объект, указывающий на сервис
-        return (request.user, {'is_moderator_service': True})
+        return (None, {'is_moderator_service': True})

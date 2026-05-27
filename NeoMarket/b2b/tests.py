@@ -4,7 +4,7 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-from app.models import Product, Category, SKU, BlockingReason, FieldReport
+from app.models import Product, Category, SKU, BlockingReason, FieldReport, ProductImage, ProductCharacteristic
 from users.models import User
 
 
@@ -734,3 +734,241 @@ class SKUUpdateAPITestCase(APITestCase):
         }
         response = self.client.put(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class B2CListProductAPITestCase(APITestCase):
+    def setUp(self):
+        self.url = reverse('b2c-product-list')
+        self.user = User.objects.create_user(
+            username='user',
+            password='12345678User',
+            email='user@mail.com',
+            company_name='urfu',
+        )
+        self.other_user = User.objects.create_user(
+            username='user2',
+            password='12345678User',
+            email='user2@mail.com',
+            company_name='urfu',
+        )
+
+        self.category1 = Category.objects.create(name='Electronics')
+        self.category2 = Category.objects.create(name='Books')
+
+        # MODERATED product with active SKU
+        self.moderated_product = Product.objects.create(
+            title='iPhone 15',
+            description='Apple smartphone',
+            category=self.category1,
+            seller=self.user,
+            status='MODERATED'
+        )
+        self.active_sku = SKU.objects.create(
+            product=self.moderated_product,
+            name='128GB',
+            price=100000,
+            stock_quantity=10,
+            reserved_quantity=0
+        )
+        ProductImage.objects.create(product=self.moderated_product, url='/images/iphone.jpg', ordering=0)
+
+        # MODERATED product with only reserved SKU (no active quantity)
+        self.no_active_product = Product.objects.create(
+            title='iPhone 14',
+            description='Older model',
+            category=self.category1,
+            seller=self.user,
+            status='MODERATED'
+        )
+        self.reserved_sku = SKU.objects.create(
+            product=self.no_active_product,
+            name='256GB',
+            price=90000,
+            stock_quantity=5,
+            reserved_quantity=5  # Все зарезервировано
+        )
+
+        # BLOCKED product (should not appear)
+        self.blocked_product = Product.objects.create(
+            title='Blocked Phone',
+            description='Blocked item',
+            category=self.category1,
+            seller=self.user,
+            status='BLOCKED'
+        )
+        self.blocked_sku = SKU.objects.create(
+            product=self.blocked_product,
+            name='64GB',
+            price=50000,
+            stock_quantity=10
+        )
+
+        # Product with same seller
+        self.same_seller_product = Product.objects.create(
+            title='Samsung Galaxy',
+            description='Samsung smartphone',
+            category=self.category1,
+            seller=self.user,
+            status='MODERATED'
+        )
+        self.same_seller_sku = SKU.objects.create(
+            product=self.same_seller_product,
+            name='128GB',
+            price=80000,
+            stock_quantity=15
+        )
+
+        # Product from other seller
+        self.other_seller_product = Product.objects.create(
+            title='Sony Xperia',
+            description='Sony smartphone',
+            category=self.category2,
+            seller=self.other_user,
+            status='MODERATED'
+        )
+        self.other_seller_sku = SKU.objects.create(
+            product=self.other_seller_product,
+            name='256GB',
+            price=70000,
+            stock_quantity=20
+        )
+
+        # Set service key authentication
+        self.client.credentials(HTTP_X_SERVICE_KEY=settings.MODERATION_TOKEN)
+
+    def test_without_service_key_returns_403(self):
+        """Без X-Service-Key должен вернуться 403"""
+        self.client.credentials()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_returns_only_moderated_products(self):
+        """Возвращаются только MODERATED товары"""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertIn('Samsung Galaxy', titles)
+        self.assertIn('Sony Xperia', titles)
+        self.assertNotIn('Blocked Phone', titles)
+
+    def test_returns_only_products_with_active_sku(self):
+        """Возвращаются только товары с active_quantity > 0"""
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)  # active_quantity = 10
+        self.assertIn('Samsung Galaxy', titles)  # active_quantity = 15
+        self.assertIn('Sony Xperia', titles)  # active_quantity = 20
+        self.assertNotIn('iPhone 14', titles)  # active_quantity = 0 (5 reserved)
+
+    def test_cover_image_returns_first_image_by_order(self):
+        """cover_image берёт изображение с наименьшим order"""
+        ProductImage.objects.create(product=self.moderated_product, url='/images/iphone-back.jpg', ordering=1)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        self.assertEqual(iphone['cover_image'], '/images/iphone.jpg')
+
+    def test_min_price_is_calculated_correctly(self):
+        """min_price = минимальная цена среди SKU"""
+        SKU.objects.create(product=self.moderated_product, name='512GB', price=150000, stock_quantity=5)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        self.assertEqual(iphone['min_price'], 100000)
+
+    def test_filter_by_category_id(self):
+        """Фильтрация по category_id"""
+        response = self.client.get(self.url + f'?category_id={self.category1.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Sony Xperia', titles)  # другая категория
+
+    def test_filter_by_seller_id(self):
+        """Фильтрация по seller_id"""
+        response = self.client.get(self.url + f'?seller_id={self.user.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Sony Xperia', titles)  # другой продавец
+
+    def test_filter_by_search_in_title(self):
+        """Текстовый поиск по title"""
+        response = self.client.get(self.url + '?search=iPhone')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Samsung Galaxy', titles)
+
+    def test_filter_by_search_in_description(self):
+        """Текстовый поиск по description"""
+        response = self.client.get(self.url + '?search=smartphone')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertIn('Samsung Galaxy', titles)
+
+    def test_filter_by_ids(self):
+        """Фильтрация по списку UUID"""
+        response = self.client.get(self.url + f'?ids={self.moderated_product.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['id'], str(self.moderated_product.pk))
+
+    def test_filter_by_ids_multiple(self):
+        """Фильтрация по нескольким UUID"""
+        response = self.client.get(self.url + f'?ids={self.moderated_product.pk},{self.same_seller_product.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 2)
+
+    def test_filter_by_min_price(self):
+        """Фильтрация по минимальной цене"""
+        response = self.client.get(self.url + '?min_price=90000')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)  # 100000
+        self.assertNotIn('Samsung Galaxy', titles)  # 80000
+        self.assertNotIn('Sony Xperia', titles)  # 70000
+
+    def test_filter_by_max_price(self):
+        """Фильтрация по максимальной цене"""
+        response = self.client.get(self.url + '?max_price=75000')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertNotIn('iPhone 15', titles)  # 100000
+        self.assertNotIn('Samsung Galaxy', titles)  # 80000
+        self.assertIn('Sony Xperia', titles)  # 70000
+
+    def test_sort_by_price_asc(self):
+        """Сортировка по цене (возрастание)"""
+        response = self.client.get(self.url + '?sort=price_asc')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        prices = [p['min_price'] for p in response.data['results']]
+        self.assertEqual(prices, sorted(prices))
+
+    def test_sort_by_price_desc(self):
+        """Сортировка по цене (убывание)"""
+        response = self.client.get(self.url + '?sort=price_desc')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        prices = [p['min_price'] for p in response.data['results']]
+        self.assertEqual(prices, sorted(prices, reverse=True))
+
+    def test_sort_by_date_desc(self):
+        """Сортировка по дате (новые сначала)"""
+        response = self.client.get(self.url + '?sort=date_desc')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Новые товары должны быть в начале
+        created_dates = [p['created_at'] for p in response.data['results']]
+        self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_filter_by_characteristics(self):
+        """Фильтрация по характеристикам"""
+        ProductCharacteristic.objects.create(product=self.moderated_product, name='brand', value='Apple')
+        ProductCharacteristic.objects.create(product=self.same_seller_product, name='brand', value='Samsung')
+        response = self.client.get(self.url + '?filters[brand]=Apple')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Samsung Galaxy', titles)

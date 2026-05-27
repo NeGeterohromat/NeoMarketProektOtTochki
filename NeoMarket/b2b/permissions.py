@@ -29,8 +29,8 @@ class IsSafeForModerator(permissions.BasePermission):
         if is_mod and request.method not in permissions.SAFE_METHODS:
             return False
             
-        return False
-
+        return True
+    
 
 class IsService(permissions.BasePermission):
     """Разрешает доступ только сервисам по X-Service-Key (без JWT)."""

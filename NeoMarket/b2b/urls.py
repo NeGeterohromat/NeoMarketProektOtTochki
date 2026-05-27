@@ -1,6 +1,13 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import CategoryViewSet, ProductCreateAPIView, ProductRetrieveUpdateAPIView, SKUUpdateAPIView, SKUCreateAPIView
+from .views import (
+    CategoryViewSet,
+    ProductCreateAPIView,
+    ProductRetrieveUpdateAPIView,
+    SKUUpdateAPIView,
+    SKUCreateAPIView,
+    B2CListProductAPIView,
+)
 
 
 router = DefaultRouter()
@@ -13,4 +20,5 @@ urlpatterns = [
     path('products/<str:pk>/', ProductRetrieveUpdateAPIView.as_view(), name='product-detail'),
     path('skus/', SKUCreateAPIView.as_view(), name='sku-create'),
     path('skus/<uuid:pk>/', SKUUpdateAPIView.as_view(), name='sku-update'),
+    path('public/products/', B2CListProductAPIView.as_view(), name='b2c-product-list'),
 ]
