@@ -1,6 +1,6 @@
 import uuid
 
-from django.db.models import Min, Q, F
+from django.db.models import Min, F
 
 from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -11,7 +11,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from django_filters import rest_framework as df_filters
 
-from app.models import Category, Product, SKU
+from app.models import Category, Product, SKU, Reservation
 from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
@@ -26,6 +26,7 @@ from .serializers import (
     SKUUpdateSerializer,
     SKUDetailSerializer,
     B2CListProductSerializer,
+    ReserveSerializer,
 )
 from .pagination import B2CProductPagination
 from .filters import B2CProductFilter
@@ -225,3 +226,10 @@ class SKUUpdateAPIView(generics.UpdateAPIView):
         
         response.data = response_serializer.data
         return response
+    
+
+class ReserveAPIView(generics.CreateAPIView):
+    queryset = Reservation.objects.all()
+    serializer_class = ReserveSerializer
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]

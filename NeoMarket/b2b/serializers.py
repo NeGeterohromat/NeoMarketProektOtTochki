@@ -12,6 +12,7 @@ from app.models import (
     SKUImage,
     BlockingReason,
     FieldReport,
+    Reservation,
 )
 from .services import handle_product_moderation_status
 
@@ -333,3 +334,19 @@ class B2CListProductSerializer(serializers.ModelSerializer):
         # images уже предзагружены через prefetch_related('images')
         image = obj.images.order_by('ordering').first()
         return image.url if image else None
+
+
+class ReservationItemSerializer(serializers.Serializer):
+    sku_id = serializers.UUIDField()
+    quantity = serializers.IntegerField()
+
+
+class ReserveSerializer(serializers.ModelSerializer):
+    items = ReservationItemSerializer(many=True)
+    class Meta:
+        model = Reservation
+        fields = ('idempotency_key', 'order_id', 'items')
+
+    def create(self, validated_data):
+        ...
+        return super().create(validated_data)
