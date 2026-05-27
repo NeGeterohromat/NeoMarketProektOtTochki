@@ -5,6 +5,7 @@ from rest_framework import serializers
 from app.models import (
     Category,
     Product,
+    ProductStatus,
     ProductCharacteristic,
     ProductImage,
     SKU,
@@ -296,14 +297,18 @@ class SellerProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True)
     characteristics = ProductCharacteristicsSerializer(many=True)
     skus = SKUDetailSerializer(many=True)
-    # blocking_reason = BlockingReasonSerializer(required=False)
-    blocking_reason_id = serializers.PrimaryKeyRelatedField(source='blocking_reason', read_only=True)
+    blocking_reason = BlockingReasonSerializer(default=None)
+    # blocking_reason_id = serializers.PrimaryKeyRelatedField(source='blocking_reason', read_only=True)
     field_reports = FieldReportSerializer(many=True, default=list)
+    blocked = serializers.SerializerMethodField()
     class Meta:
         model = Product
-        fields = ('id', 'seller_id', 'category_id', 'title', 'description',
+        fields = ('id', 'seller_id', 'category_id', 'title', 'description', 'blocked',
                   'status', 'moderator_comment', 'images', 'characteristics', 'deleted', 'slug',
-                  'skus', 'blocking_reason_id', 'field_reports', 'created_at', 'updated_at')
+                  'skus', 'blocking_reason', 'field_reports', 'created_at', 'updated_at')
+        
+    def get_blocked(self, obj):
+        return obj.status in [ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED]
     
 
 class ModeratorSKUDetailSerializer(serializers.ModelSerializer):

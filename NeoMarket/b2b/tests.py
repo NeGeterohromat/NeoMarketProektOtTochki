@@ -364,6 +364,16 @@ class ProductRetrieveAPITestCase(APITestCase):
         self.blocking_reason = BlockingReason.objects.create(product=self.blocked_product, title='string', comment='string')
         self.field_report = FieldReport.objects.create(product=self.blocked_product, field_name='string', comment='string')
         
+    def test_get_blocked_product_returns_blocking_reason_with_title_and_comment(self):
+        """Товар в статусе BLOCKED возвращает blocking_reason с title и comment, и blocked=True"""
+        url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
+        response = self.client.get(url, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['blocking_reason']['title'], self.blocking_reason.title)
+        self.assertEqual(response.data['blocking_reason']['comment'], self.blocking_reason.comment)
+        self.assertIs(response.data['blocked'], True)
+
     def test_get_moderated_product_returns_full_payload(self):
         url = reverse('product-detail', kwargs={'pk': self.product.pk})
         self.product.status = "MODERATED"
@@ -376,7 +386,7 @@ class ProductRetrieveAPITestCase(APITestCase):
     def test_get_blocked_product_returns_blocking_reason_and_field_reports(self):
         url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
         response = self.client.get(url, format='json')
-        self.assertEqual(response.data.get('blocking_reason_id'), self.blocking_reason.pk)
+        self.assertEqual(response.data.get('blocking_reason').get('title'), self.blocking_reason.title)
         self.assertEqual(response.data.get('field_reports')[0].get('field_name'), self.field_report.field_name)
 
     def test_get_others_product_returns_404(self):
