@@ -836,11 +836,11 @@ class B2CListProductAPITestCase(APITestCase):
         # Set service key authentication
         self.client.credentials(HTTP_X_SERVICE_KEY=settings.MODERATION_TOKEN)
 
-    def test_without_service_key_returns_403(self):
-        """Без X-Service-Key должен вернуться 403"""
+    def test_catalog_missing_service_key_returns_401(self):
+        """Без X-Service-Key должен вернуться 401"""
         self.client.credentials()
         response = self.client.get(self.url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_returns_only_moderated_products(self):
         """Возвращаются только MODERATED товары"""
