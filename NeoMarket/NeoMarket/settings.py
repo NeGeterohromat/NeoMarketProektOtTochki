@@ -49,6 +49,7 @@ INSTALLED_APPS = [
 
     'rest_framework',
     'drf_spectacular',
+    'django_filters',
 
     'app',
     'users.apps.UsersConfig',
@@ -146,9 +147,11 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
+    #    'b2b.authentication.ServiceKeyAuthentication',
        'rest_framework_simplejwt.authentication.JWTAuthentication',
        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'EXCEPTION_HANDLER': 'NeoMarket.exceptions.custom_exception_handler',
+    'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',),
 }

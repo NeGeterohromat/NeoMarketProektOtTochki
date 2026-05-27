@@ -1,4 +1,5 @@
 from rest_framework import permissions
+from rest_framework import exceptions
 
 from app.models import ProductStatus, Product
 
@@ -30,6 +31,18 @@ class IsSafeForModerator(permissions.BasePermission):
             return False
             
         return True
+    
+
+class IsService(permissions.BasePermission):
+    """Разрешает доступ только сервисам по X-Service-Key (без JWT)."""
+    message = "Service Key required"
+    
+    def has_permission(self, request, view):
+        auth_data = request.auth
+        if isinstance(auth_data, dict) and auth_data.get('is_moderator_service') is True:
+            return True
+        # Возвращаем False, чтобы permission_denied() сама решила, какое исключение выбросить
+        return False
 
 
 class CanUpdateProduct(permissions.BasePermission):

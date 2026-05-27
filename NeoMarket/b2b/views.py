@@ -1,26 +1,34 @@
 import uuid
-from rest_framework import viewsets, generics, permissions, status
+
+from django.db.models import Min, Q, F
+
+from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from drf_spectacular.utils import extend_schema, extend_schema_view
 
+from django_filters import rest_framework as df_filters
+
 from app.models import Category, Product, SKU
-from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator
+from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
-    ProductDetailSerializer,
+    # ProductDetailSerializer,
     SellerProductDetailSerializer,
     ModeratorProductDetailSerializer,
     SKUCreateSerializer,
     # SKUResponseSerializer,
     SKUUpdateSerializer,
     SKUDetailSerializer,
+    B2CListProductSerializer,
 )
+from .pagination import B2CProductPagination
+from .filters import B2CProductFilter
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -129,6 +137,50 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
             
         return super().get_object()
+
+
+class B2CListProductAPIView(generics.ListAPIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    
+    queryset = Product.objects.filter(
+        status="MODERATED", 
+        deleted=False,
+        skus__stock_quantity__gt=F('skus__reserved_quantity')
+    ).prefetch_related('skus', 'images').annotate(min_price=Min('skus__price'))
+    serializer_class = B2CListProductSerializer
+    pagination_class = B2CProductPagination
+    filter_backends = [df_filters.DjangoFilterBackend, drf_filters.OrderingFilter]
+    filterset_class = B2CProductFilter
+    ordering_fields = ['min_price', 'created_at']
+    ordering = ['-created_at']
+    ordering_param = 'sort'
+
+    def filter_queryset(self, queryset):
+        """Переопределяем фильтрацию, чтобы обработать кастомные параметры сортировки."""
+        for backend in list(self.filter_backends):
+            if backend == drf_filters.OrderingFilter:
+                # Обрабатываем сортировку вручную
+                ordering_param_value = self.request.query_params.get(self.ordering_param)
+                if ordering_param_value:
+                    fields = [param.strip() for param in ordering_param_value.split(',')]
+                    transformed_orderings = []
+                    for ordering in fields:
+                        if ordering == 'price_asc':
+                            transformed_orderings.append('min_price')
+                        elif ordering == 'price_desc':
+                            transformed_orderings.append('-min_price')
+                        elif ordering == 'date_desc':
+                            transformed_orderings.append('-created_at')
+                        else:
+                            transformed_orderings.append(ordering)
+                    if transformed_orderings:
+                        queryset = queryset.order_by(*transformed_orderings)
+                continue
+            
+            queryset = backend().filter_queryset(self.request, queryset, self)
+        
+        return queryset
 
 
 class SKUCreateAPIView(generics.CreateAPIView):
