@@ -260,6 +260,7 @@ class FieldReport(UUIDModel):
 
 
 class Reservation(UUIDModel):
-    idempotency_key = models.UUIDField(unique=True, default=uuid.uuid4)
-    order_id = models.UUIDField(unique=True, default=uuid.uuid4)
+    idempotency_key = models.UUIDField(unique=True)
+    order_id = models.UUIDField(unique=True)
     items = models.JSONField()
+    reserved_at = models.DateTimeField(auto_now_add=True)

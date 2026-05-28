@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
@@ -16,6 +16,7 @@ from app.models import (
     Reservation,
 )
 from .services import handle_product_moderation_status
+from .exceptions import InsufficientStockException, OutOfStockException
 
 
 # list (нужно добавить фильтр), post, вложенный в detail, patch
@@ -347,11 +348,83 @@ class ReservationItemSerializer(serializers.Serializer):
 
 
 class ReserveSerializer(serializers.ModelSerializer):
-    items = ReservationItemSerializer(many=True)
+    idempotency_key = serializers.UUIDField(write_only=True, required=True) # только для создания
+    items = ReservationItemSerializer(many=True, write_only=True)
+    reserved_at = serializers.DateTimeField(read_only=True)
+    status = serializers.SerializerMethodField()
+
+    def get_status(self, obj):
+        return 'RESERVED'
+
     class Meta:
         model = Reservation
-        fields = ('idempotency_key', 'order_id', 'items')
+        fields = ('idempotency_key', 'order_id', 'items', 'status', 'reserved_at')
 
     def create(self, validated_data):
-        ...
-        return super().create(validated_data)
+        items_data = validated_data.pop('items')
+        idempotency_key = validated_data['idempotency_key']
+        order_id = validated_data['order_id']
+        
+        # 1. Проверяем, есть ли уже запись с таким idempotency_key
+        existing_reservation = Reservation.objects.filter(
+            idempotency_key=idempotency_key
+        ).select_for_update().first()
+        
+        if existing_reservation:
+            # Возвращаем существующую запись (идемпотентный ответ)
+            existing_reservation._is_new = False
+            return existing_reservation
+        
+        with transaction.atomic():
+            # 2. Блокируем и проверяем ВСЕ SKU
+            skus_to_update = []
+            for item_data in items_data:
+                sku = SKU.objects.select_for_update().select_related('product').get(pk=item_data['sku_id'])
+
+                if sku.product.status in [ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED]:
+                    raise serializers.ValidationError(
+                        {'items': f'Товар "{sku.product.title}" заблокирован и не доступен для резервации'}
+                    )
+
+                available = sku.stock_quantity - sku.reserved_quantity
+                
+                if item_data['quantity'] > available:
+                    if available == 0:
+                        raise OutOfStockException(
+                            sku_id=str(sku.pk),
+                            sku_name=sku.name
+                        )
+                    else:
+                        raise InsufficientStockException(
+                            sku_id=str(sku.pk),
+                            sku_name=sku.name,
+                            available=available,
+                            requested=item_data['quantity']
+                        )
+                
+                sku.reserved_quantity += item_data['quantity']
+                skus_to_update.append(sku)
+            
+            # 3. Сохраняем все SKU
+            for sku in skus_to_update:
+                sku.save(update_fields=['reserved_quantity'])
+            
+            # 4. Только потом создаем Reservation
+            try:
+                reservation = Reservation.objects.create(
+                    idempotency_key=idempotency_key,
+                    order_id=order_id,
+                    items=items_data
+                )
+            except IntegrityError:
+                # Запись появилась между проверкой и созданием (race condition)
+                existing = Reservation.objects.filter(idempotency_key=idempotency_key).first()
+                if existing:
+                    existing._is_new = False
+                    return existing
+                raise serializers.ValidationError(
+                    {'idempotency_key': 'Резервация с таким idempotency_key уже существует'}
+                )
+        
+        reservation._is_new = True
+        return reservation

@@ -233,3 +233,17 @@ class ReserveAPIView(generics.CreateAPIView):
     serializer_class = ReserveSerializer
     authentication_classes = [ServiceKeyAuthentication]
     permission_classes = [IsService]
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reservation = serializer.save()
+        
+        # Проверяем, была ли это новая запись
+        is_new = getattr(reservation, '_is_new', True)
+        status_code = status.HTTP_201_CREATED if is_new else status.HTTP_200_OK
+        
+        return Response(
+            self.get_serializer(reservation).data,
+            status=status_code
+        )
