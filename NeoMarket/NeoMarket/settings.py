@@ -24,6 +24,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 MODERATION_URL=env('MODERATION_URL')
+B2C_URL=env('B2C_URL')
 SERVICE_TOKEN=env('SERVICE_TOKEN')
 
 # Quick-start development settings - unsuitable for production

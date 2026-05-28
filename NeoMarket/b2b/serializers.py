@@ -15,7 +15,7 @@ from app.models import (
     FieldReport,
     Reservation,
 )
-from .services import handle_product_moderation_status
+from .services import handle_product_moderation_status, send_sku_out_of_stock_event
 from .exceptions import InsufficientStockException, OutOfStockException
 
 
@@ -427,4 +427,12 @@ class ReserveSerializer(serializers.ModelSerializer):
                 )
         
         reservation._is_new = True
+        
+        # Отправляем событие SKU_OUT_OF_STOCK для SKU, у которых остаток стал 0
+        for sku in skus_to_update:
+            available_after = sku.stock_quantity - sku.reserved_quantity
+            if available_after == 0:
+                # Отправляем событие после коммита транзакции
+                transaction.on_commit(lambda s=sku: send_sku_out_of_stock_event(s))
+        
         return reservation
