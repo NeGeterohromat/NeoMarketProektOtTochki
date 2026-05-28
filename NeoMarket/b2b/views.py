@@ -1,8 +1,10 @@
 import uuid
 
 from django.db.models import Min, F
+from django.utils import timezone
 
 from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
+from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -27,6 +29,7 @@ from .serializers import (
     SKUDetailSerializer,
     B2CListProductSerializer,
     ReserveSerializer,
+    UnreserveSerializer,
 )
 from .pagination import B2CProductPagination
 from .filters import B2CProductFilter
@@ -246,4 +249,31 @@ class ReserveAPIView(generics.CreateAPIView):
         return Response(
             self.get_serializer(reservation).data,
             status=status_code
+        )
+    
+
+class UnreserveAPIView(APIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    
+    def post(self, request, *args, **kwargs):
+        serializer = UnreserveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        reservation = serializer.save()
+        
+        if reservation is None:
+            return Response(
+                {'status': 'UNRESERVED', 'message': 'Резерв полностью снят, запись удалена'},
+                status=status.HTTP_200_OK
+            )
+        
+        return Response(
+            {
+                'status': 'UNRESERVED',
+                'order_id': reservation.order_id,
+                'processed_at': timezone.now(),
+                'remaining_items': reservation.items
+            },
+            status=status.HTTP_200_OK
         )
