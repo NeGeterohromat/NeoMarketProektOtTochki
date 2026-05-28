@@ -10,7 +10,7 @@ def handle_product_moderation_status(product, status):
         base_url = settings.MODERATION_URL
         url = f"{base_url}/api/v1/b2b/events/"
         headers = {
-            "X-Service-Key": settings.MODERATION_TOKEN,
+            "X-Service-Key": settings.SERVICE_TOKEN,
             "Content-Type": "application/json"
         }
         payload = {

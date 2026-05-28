@@ -9,7 +9,7 @@ class ServiceKeyAuthentication(BaseAuthentication):
             # Ключа нет - возвращаем None, чтобы DRF попробовал другие аутентификаторы
             return None
 
-        valid_key = settings.MODERATION_TOKEN
+        valid_key = settings.SERVICE_TOKEN
         if auth_key != valid_key:
             raise exceptions.AuthenticationFailed('Invalid Service Key')
 

@@ -858,7 +858,7 @@ class B2CListProductAPITestCase(APITestCase):
         )
 
         # Set service key authentication
-        self.client.credentials(HTTP_X_SERVICE_KEY=settings.MODERATION_TOKEN)
+        self.client.credentials(HTTP_X_SERVICE_KEY=settings.SERVICE_TOKEN)
 
     def test_catalog_missing_service_key_returns_401(self):
         """Без X-Service-Key должен вернуться 401"""
