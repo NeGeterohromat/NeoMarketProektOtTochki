@@ -410,11 +410,16 @@ class ReserveSerializer(serializers.ModelSerializer):
                 sku.save(update_fields=['reserved_quantity'])
             
             # 4. Только потом создаем Reservation
+            # Конвертируем UUID в строки для JSON сериализации
+            items_for_save = [
+                {'sku_id': str(item['sku_id']), 'quantity': item['quantity']}
+                for item in items_data
+            ]
             try:
                 reservation = Reservation.objects.create(
                     idempotency_key=idempotency_key,
                     order_id=order_id,
-                    items=items_data
+                    items=items_for_save
                 )
             except IntegrityError:
                 # Запись появилась между проверкой и созданием (race condition)
@@ -509,7 +514,7 @@ class UnreserveSerializer(serializers.Serializer):
                 new_quantity = quantity - unreserved_qty
                 if new_quantity > 0:
                     updated_items.append({
-                        'sku_id': item['sku_id'],
+                        'sku_id': str(item['sku_id']),
                         'quantity': new_quantity
                     })
             
