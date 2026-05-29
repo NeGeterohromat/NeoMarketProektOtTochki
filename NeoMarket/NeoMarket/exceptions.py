@@ -1,4 +1,6 @@
 from rest_framework.views import exception_handler
+from rest_framework.response import Response
+from b2b.exceptions import InsufficientStockException, OutOfStockException
 
 def get_first_error(data):
     """Рекурсивно извлекает первую ошибку (код или текст) из структуры DRF"""
@@ -21,9 +23,28 @@ def get_first_error(data):
     return str(data)
 
 def custom_exception_handler(exc, context):
-    """
-    Меняет стандартный ответ при исключении на формат {"code": "...", "message": "..."}
-    """
+    # Обработка кастомного исключения недостаточного остатка
+    if isinstance(exc, InsufficientStockException):
+        return Response(
+            {
+                'code': exc.default_code,
+                'message': exc.default_detail,
+                'details': exc.detail
+            },
+            status=exc.status_code
+        )
+    
+    # Обработка кастомного исключения отсутствия товара
+    if isinstance(exc, OutOfStockException):
+        return Response(
+            {
+                'code': exc.default_code,
+                'message': exc.default_detail,
+                'details': exc.detail
+            },
+            status=exc.status_code
+        )
+    
     response = exception_handler(exc, context)
 
     if response is not None:

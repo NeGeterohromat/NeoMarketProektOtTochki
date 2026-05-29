@@ -7,6 +7,8 @@ from .views import (
     SKUUpdateAPIView,
     SKUCreateAPIView,
     B2CListProductAPIView,
+    ReserveAPIView,
+    UnreserveAPIView,
 )
 
 
@@ -21,4 +23,6 @@ urlpatterns = [
     path('skus/', SKUCreateAPIView.as_view(), name='sku-create'),
     path('skus/<uuid:pk>/', SKUUpdateAPIView.as_view(), name='sku-update'),
     path('public/products/', B2CListProductAPIView.as_view(), name='b2c-product-list'),
+    path('inventory/reserve/', ReserveAPIView.as_view(), name='reserve'),
+    path('inventory/unreserve/', UnreserveAPIView.as_view(), name='unreserve'),
 ]

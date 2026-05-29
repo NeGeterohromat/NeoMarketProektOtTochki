@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
@@ -13,8 +13,10 @@ from app.models import (
     SKUImage,
     BlockingReason,
     FieldReport,
+    Reservation,
 )
-from .services import handle_product_moderation_status
+from .services import handle_product_moderation_status, send_sku_out_of_stock_event
+from .exceptions import InsufficientStockException, OutOfStockException
 
 
 # list (нужно добавить фильтр), post, вложенный в detail, patch
@@ -338,3 +340,189 @@ class B2CListProductSerializer(serializers.ModelSerializer):
         # images уже предзагружены через prefetch_related('images')
         image = obj.images.order_by('ordering').first()
         return image.url if image else None
+
+
+class ReservationItemSerializer(serializers.Serializer):
+    sku_id = serializers.UUIDField()
+    quantity = serializers.IntegerField()
+
+
+class ReserveSerializer(serializers.ModelSerializer):
+    idempotency_key = serializers.UUIDField(write_only=True, required=True) # только для создания
+    items = ReservationItemSerializer(many=True, write_only=True)
+    reserved_at = serializers.DateTimeField(read_only=True)
+    status = serializers.SerializerMethodField()
+
+    def get_status(self, obj):
+        return 'RESERVED'
+
+    class Meta:
+        model = Reservation
+        fields = ('idempotency_key', 'order_id', 'items', 'status', 'reserved_at')
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items')
+        idempotency_key = validated_data['idempotency_key']
+        order_id = validated_data['order_id']
+        
+        # 1. Проверяем, есть ли уже запись с таким idempotency_key
+        existing_reservation = Reservation.objects.filter(
+            idempotency_key=idempotency_key
+        ).select_for_update().first()
+        
+        if existing_reservation:
+            # Возвращаем существующую запись (идемпотентный ответ)
+            existing_reservation._is_new = False
+            return existing_reservation
+        
+        with transaction.atomic():
+            # 2. Блокируем и проверяем ВСЕ SKU
+            skus_to_update = []
+            for item_data in items_data:
+                sku = SKU.objects.select_for_update().select_related('product').get(pk=item_data['sku_id'])
+
+                if sku.product.status in [ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED]:
+                    raise serializers.ValidationError(
+                        {'items': f'Товар "{sku.product.title}" заблокирован и не доступен для резервации'}
+                    )
+
+                available = sku.stock_quantity - sku.reserved_quantity
+                
+                if item_data['quantity'] > available:
+                    if available == 0:
+                        raise OutOfStockException(
+                            sku_id=str(sku.pk),
+                            sku_name=sku.name
+                        )
+                    else:
+                        raise InsufficientStockException(
+                            sku_id=str(sku.pk),
+                            sku_name=sku.name,
+                            available=available,
+                            requested=item_data['quantity']
+                        )
+                
+                sku.reserved_quantity += item_data['quantity']
+                skus_to_update.append(sku)
+            
+            # 3. Сохраняем все SKU
+            for sku in skus_to_update:
+                sku.save(update_fields=['reserved_quantity'])
+            
+            # 4. Только потом создаем Reservation
+            # Конвертируем UUID в строки для JSON сериализации
+            items_for_save = [
+                {'sku_id': str(item['sku_id']), 'quantity': item['quantity']}
+                for item in items_data
+            ]
+            try:
+                reservation = Reservation.objects.create(
+                    idempotency_key=idempotency_key,
+                    order_id=order_id,
+                    items=items_for_save
+                )
+            except IntegrityError:
+                # Запись появилась между проверкой и созданием (race condition)
+                existing = Reservation.objects.filter(idempotency_key=idempotency_key).first()
+                if existing:
+                    existing._is_new = False
+                    return existing
+                raise serializers.ValidationError(
+                    {'idempotency_key': 'Резервация с таким idempotency_key уже существует'}
+                )
+        
+        reservation._is_new = True
+        
+        # Отправляем событие SKU_OUT_OF_STOCK для SKU, у которых остаток стал 0
+        for sku in skus_to_update:
+            available_after = sku.stock_quantity - sku.reserved_quantity
+            if available_after == 0:
+                # Отправляем событие после коммита транзакции
+                transaction.on_commit(lambda s=sku: send_sku_out_of_stock_event(s))
+        
+        return reservation
+
+
+class UnreserveSerializer(serializers.Serializer):
+    order_id = serializers.UUIDField(write_only=True, required=True)
+    items = ReservationItemSerializer(many=True, write_only=True)
+    
+    def validate(self, data):
+        order_id = data['order_id']
+        
+        try:
+            self.reservation = Reservation.objects.get(order_id=order_id)
+        except Reservation.DoesNotExist:
+            raise serializers.ValidationError(
+                {'order_id': 'Резервация с таким order_id не найдена'}
+            )
+        
+        for item in data['items']:
+            sku_id = str(item['sku_id'])
+            quantity = item['quantity']
+            
+            matching_item = next(
+                (i for i in self.reservation.items if str(i['sku_id']) == sku_id),
+                None
+            )
+            
+            if not matching_item:
+                raise serializers.ValidationError(
+                    {'items': f'SKU {sku_id} не входит в резервацию order_id={order_id}'}
+                )
+            
+            if quantity > matching_item['quantity']:
+                raise serializers.ValidationError(
+                    {'items': f'Количество {quantity} превышает зарезервированное {matching_item["quantity"]} для SKU {sku_id}'}
+                )
+        
+        return data
+    
+    def save(self):
+        from django.db import transaction
+        from app.models import SKU
+        
+        order_id = self.validated_data['order_id']
+        items_data = self.validated_data['items']
+        
+        with transaction.atomic():
+            reservation = Reservation.objects.select_for_update().get(order_id=order_id)
+            
+            skus_to_update = []
+            for item_data in items_data:
+                sku = SKU.objects.select_for_update().get(pk=item_data['sku_id'])
+                sku.reserved_quantity -= item_data['quantity']
+                
+                if sku.reserved_quantity < 0:
+                    sku.reserved_quantity = 0
+                
+                skus_to_update.append(sku)
+            
+            for sku in skus_to_update:
+                sku.save(update_fields=['reserved_quantity'])
+            
+            updated_items = []
+            for item in reservation.items:
+                sku_id = str(item['sku_id'])
+                quantity = item['quantity']
+                
+                unreserved_qty = next(
+                    (i['quantity'] for i in items_data if str(i['sku_id']) == sku_id),
+                    0
+                )
+                
+                new_quantity = quantity - unreserved_qty
+                if new_quantity > 0:
+                    updated_items.append({
+                        'sku_id': str(item['sku_id']),
+                        'quantity': new_quantity
+                    })
+            
+            if not updated_items:
+                reservation.delete()
+                return None
+            
+            reservation.items = updated_items
+            reservation.save(update_fields=['items'])
+        
+        return reservation

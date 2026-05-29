@@ -234,6 +234,7 @@ class InvoiceItem(UUIDModel):
         return f"{self.sku.name} × {self.quantity}"
     
 
+# не используется, потом надо будет убрать
 class Moderation(UUIDModel):
     class Events(models.TextChoices):
         EDITED = "EDITED", "Отредактировано"
@@ -256,3 +257,10 @@ class FieldReport(UUIDModel):
     field_name = models.CharField(max_length=255)
     sku = models.ForeignKey(SKU, blank=True, null=True, on_delete=models.CASCADE, related_name="field_reports")
     comment = models.TextField()
+
+
+class Reservation(UUIDModel):
+    idempotency_key = models.UUIDField(unique=True)
+    order_id = models.UUIDField(unique=True)
+    items = models.JSONField()
+    reserved_at = models.DateTimeField(auto_now_add=True)
