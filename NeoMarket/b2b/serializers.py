@@ -2,6 +2,7 @@ from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from django.core.validators import RegexValidator
 from rest_framework import serializers
+from rest_framework.exceptions import NotFound
 from app.models import (
     Category,
     Product,
@@ -14,8 +15,9 @@ from app.models import (
     BlockingReason,
     FieldReport,
     Reservation,
+    ModerationEvent,
 )
-from .services import handle_product_moderation_status, send_sku_out_of_stock_event
+from .services import handle_product_moderation_status, send_sku_out_of_stock_event, send_product_blocked
 from .exceptions import InsufficientStockException, OutOfStockException
 
 
@@ -286,13 +288,15 @@ class BlockingReasonSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlockingReason
         fields = ('id', 'title', 'comment')
+        read_only_fields = ('id',)
 
 
 class FieldReportSerializer(serializers.ModelSerializer):
-    sku_id = serializers.PrimaryKeyRelatedField(queryset=SKU.objects.all(), source='sku', allow_null=True)
+    sku_id = serializers.PrimaryKeyRelatedField(queryset=SKU.objects.all(), source='sku', allow_null=True, required=False)
     class Meta:
         model = FieldReport
         fields = ('id', 'field_name', 'sku_id', 'comment')
+        read_only_fields = ('id',)
 
 
 class SellerProductDetailSerializer(serializers.ModelSerializer):
@@ -365,17 +369,17 @@ class ReserveSerializer(serializers.ModelSerializer):
         idempotency_key = validated_data['idempotency_key']
         order_id = validated_data['order_id']
         
-        # 1. Проверяем, есть ли уже запись с таким idempotency_key
-        existing_reservation = Reservation.objects.filter(
-            idempotency_key=idempotency_key
-        ).select_for_update().first()
-        
-        if existing_reservation:
-            # Возвращаем существующую запись (идемпотентный ответ)
-            existing_reservation._is_new = False
-            return existing_reservation
-        
         with transaction.atomic():
+            # 1. Проверяем, есть ли уже запись с таким idempotency_key
+            existing_reservation = Reservation.objects.filter(
+                idempotency_key=idempotency_key
+            ).select_for_update().first()
+            
+            if existing_reservation:
+                # Возвращаем существующую запись (идемпотентный ответ)
+                existing_reservation._is_new = False
+                return existing_reservation
+
             # 2. Блокируем и проверяем ВСЕ SKU
             skus_to_update = []
             for item_data in items_data:
@@ -431,15 +435,15 @@ class ReserveSerializer(serializers.ModelSerializer):
                     {'idempotency_key': 'Резервация с таким idempotency_key уже существует'}
                 )
         
-        reservation._is_new = True
-        
-        # Отправляем событие SKU_OUT_OF_STOCK для SKU, у которых остаток стал 0
-        for sku in skus_to_update:
-            available_after = sku.stock_quantity - sku.reserved_quantity
-            if available_after == 0:
-                # Отправляем событие после коммита транзакции
-                transaction.on_commit(lambda s=sku: send_sku_out_of_stock_event(s))
-        
+            reservation._is_new = True
+            
+            # Отправляем событие SKU_OUT_OF_STOCK для SKU, у которых остаток стал 0
+            for sku in skus_to_update:
+                available_after = sku.stock_quantity - sku.reserved_quantity
+                if available_after == 0:
+                    # Отправляем событие после коммита транзакции
+                    transaction.on_commit(lambda s=sku: send_sku_out_of_stock_event(s))
+            
         return reservation
 
 
@@ -526,3 +530,77 @@ class UnreserveSerializer(serializers.Serializer):
             reservation.save(update_fields=['items'])
         
         return reservation
+    
+
+class ModerationEventSerializer(serializers.ModelSerializer):
+    blocking_reason = BlockingReasonSerializer(default=None)
+    field_reports = FieldReportSerializer(many=True, default=list)
+    class Meta:
+        model = ModerationEvent
+        fields = ('idempotency_key', 'product_id', 'event_type', 'moderator_id', 'moderator_comment',
+                  'blocking_reason', 'field_reports', 'hard_block', 'occurred_at')
+        
+    def create(self, validated_data):
+        blocking_reason_data = validated_data.pop('blocking_reason', None)
+        field_reports_data = validated_data.pop('field_reports', [])
+
+        event_type_data = validated_data['event_type']
+        is_hard_blocked = validated_data['hard_block']
+
+        product = validated_data['product_id']
+
+        with transaction.atomic():
+            # проверка idempotency_key
+            idempotency_key = validated_data['idempotency_key']
+            existing_event = ModerationEvent.objects.filter(
+                idempotency_key=idempotency_key
+            ).select_for_update().first()
+            if existing_event:
+                return existing_event
+            
+            try:
+                product = Product.objects.select_related('blocking_reason').select_for_update().get(pk=product.pk)
+            except Product.DoesNotExist:
+                raise NotFound({'detail': 'Продукт не найден'})
+
+            # проверка типа события
+            if event_type_data == ModerationEvent.EventType.MODERATED:
+                # если blocking_reason нет, то из-за select_related вернётся None, а не ошибка (магия)
+                if product.blocking_reason:
+                    product.blocking_reason.delete()
+                # удалить все field reports
+                product.field_reports.all().delete()
+                # обновляем толкьо статус, т.к. blocked вычилсяется само от статуса
+                product.status = ProductStatus.MODERATED
+                product.save(update_fields=['status'])
+            elif event_type_data == ModerationEvent.EventType.BLOCKED:
+                if not blocking_reason_data:
+                    raise serializers.ValidationError({
+                        'blocking_reason': 'Необходимо указать причину блокировки'
+                    })
+                if product.blocking_reason:
+                    product.blocking_reason.delete()
+                BlockingReason.objects.create(
+                    product=product,
+                    title=blocking_reason_data['title'],
+                    comment=blocking_reason_data['comment'],
+                )
+                product.field_reports.all().delete()
+                field_reports_objects = [
+                    FieldReport(product=product, **report_data)
+                    for report_data in field_reports_data
+                ]
+                FieldReport.objects.bulk_create(field_reports_objects)
+                
+                product.status = ProductStatus.HARD_BLOCKED if is_hard_blocked else ProductStatus.BLOCKED
+                product.save(update_fields=['status'])
+
+            moderation_event = ModerationEvent.objects.create(**validated_data)
+        
+            if event_type_data == ModerationEvent.EventType.BLOCKED:
+                transaction.on_commit(
+                    lambda key=idempotency_key, product=product.pk, reason=blocking_reason_data['title'], hard=is_hard_blocked : send_product_blocked(
+                        key, product, reason, hard
+                    )
+                )
+        return moderation_event
