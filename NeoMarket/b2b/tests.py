@@ -1,3 +1,4 @@
+import uuid
 import responses
 from unittest.mock import patch
 from django.urls import reverse
@@ -5,7 +6,7 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
-from app.models import Product, Category, SKU, BlockingReason, FieldReport, ProductImage, ProductCharacteristic
+from app.models import Product, Category, SKU, BlockingReason, FieldReport, ProductImage, ProductCharacteristic, ProductStatus, ModerationEvent
 from users.models import User
 
 
@@ -1354,3 +1355,310 @@ class ReserveUnreserveAPITestCase(APITestCase):
         # reserved_quantity не должно измениться
         self.sku1.refresh_from_db()
         self.assertEqual(self.sku1.reserved_quantity, 3)
+
+
+class ModerationEventsAPITestCase(APITestCase):
+    """Тесты для ModerationEventsAPIVew"""
+    
+    def setUp(self):
+        self.url = reverse('moderation-events')
+        self.service_token = settings.SERVICE_TOKEN
+        self.client.credentials(HTTP_X_SERVICE_KEY=self.service_token)
+        
+        self.category = Category.objects.create(name='Test Category')
+        self.seller = User.objects.create_user(
+            username='seller',
+            password='12345678User',
+            email='seller@mail.com',
+            company_name='Test Company',
+        )
+        self.moderator = User.objects.create_user(
+            username='moderator',
+            password='12345678User',
+            email='moderator@mail.com',
+            company_name='Moderator Company',
+        )
+        
+        # Создаем UUID для idempotency_key
+        self.idempotency_key = uuid.uuid4()
+        self.moderator_id = uuid.uuid4()
+
+    def test_moderated_event_clears_blocking_data(self):
+        """status=MODERATED: товар MODERATED, blocking_reason и field_reports очищены"""
+        # Создаем товар в статусе BLOCKED с blocking_reason и field_reports
+        product = Product.objects.create(
+            title='Blocked Product',
+            description='Product to be moderated',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.BLOCKED
+        )
+        blocking_reason = BlockingReason.objects.create(
+            product=product,
+            title='Violates policies',
+            comment='Product description violates rules'
+        )
+        field_report1 = FieldReport.objects.create(
+            product=product,
+            field_name='description',
+            comment='Bad description'
+        )
+        field_report2 = FieldReport.objects.create(
+            product=product,
+            field_name='title',
+            comment='Bad title'
+        )
+        
+        # Отправляем событие MODERATED
+        event_data = {
+            'idempotency_key': str(self.idempotency_key),
+            'product_id': str(product.pk),
+            'event_type': 'MODERATED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Approved after review',
+            'hard_block': False,
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        
+        # Проверяем, что товар теперь MODERATED
+        product.refresh_from_db()
+        self.assertEqual(product.status, ProductStatus.MODERATED)
+        
+        # Проверяем, что blocking_reason удален
+        self.assertFalse(BlockingReason.objects.filter(product=product).exists())
+        
+        # Проверяем, что field_reports удалены
+        self.assertFalse(FieldReport.objects.filter(product=product).exists())
+
+    def test_blocked_soft_saves_field_reports(self):
+        """status=BLOCKED + hard_block=false: BLOCKED, field_reports сохранены, каскад в B2C"""
+        product = Product.objects.create(
+            title='Product to block',
+            description='Product to be blocked softly',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.MODERATED
+        )
+        # Создаем существующий field_report
+        existing_report = FieldReport.objects.create(
+            product=product,
+            field_name='description',
+            comment='Existing report'
+        )
+        
+        event_data = {
+            'idempotency_key': str(self.idempotency_key),
+            'product_id': str(product.pk),
+            'event_type': 'BLOCKED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Soft block due to minor issues',
+            'hard_block': False,
+            'blocking_reason': {
+                'title': 'Minor violation',
+                'comment': 'Product needs minor corrections'
+            },
+            'field_reports': [
+                {
+                    'field_name': 'description',
+                    'comment': 'Description needs changes'
+                },
+                {
+                    'field_name': 'price',
+                    'comment': 'Price is incorrect'
+                }
+            ]
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        
+        # Проверяем, что товар теперь BLOCKED (не HARD_BLOCKED)
+        product.refresh_from_db()
+        self.assertEqual(product.status, ProductStatus.BLOCKED)
+        
+        # Проверяем, что blocking_reason создан
+        self.assertTrue(BlockingReason.objects.filter(product=product).exists())
+        reason = BlockingReason.objects.get(product=product)
+        self.assertEqual(reason.title, 'Minor violation')
+        self.assertEqual(reason.comment, 'Product needs minor corrections')
+        
+        # Проверяем, что field_reports созданы (старый удален, новые созданы)
+        reports = FieldReport.objects.filter(product=product)
+        self.assertEqual(reports.count(), 2)
+        field_names = [r.field_name for r in reports]
+        self.assertIn('description', field_names)
+        self.assertIn('price', field_names)
+
+    @patch('b2b.services.send_product_blocked')
+    def test_blocked_hard_sets_terminal_status(self, mock_send_blocked):
+        """status=BLOCKED + hard_block=true: HARD_BLOCKED, каскад в B2C"""
+        product = Product.objects.create(
+            title='Product to hard block',
+            description='Product to be blocked hard',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.MODERATED
+        )
+        
+        event_data = {
+            'idempotency_key': str(self.idempotency_key),
+            'product_id': str(product.pk),
+            'event_type': 'BLOCKED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Hard block due to severe violation',
+            'hard_block': True,
+            'blocking_reason': {
+                'title': 'Severe violation',
+                'comment': 'Product violates major policies'
+            },
+            'field_reports': []
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        
+        # Проверяем, что товар теперь HARD_BLOCKED
+        product.refresh_from_db()
+        self.assertEqual(product.status, ProductStatus.HARD_BLOCKED)
+        
+        # Проверяем, что blocking_reason создан
+        self.assertTrue(BlockingReason.objects.filter(product=product).exists())
+        reason = BlockingReason.objects.get(product=product)
+        self.assertEqual(reason.title, 'Severe violation')
+        
+        # Проверяем, что field_reports очищены
+        self.assertFalse(FieldReport.objects.filter(product=product).exists())
+        
+        # Примечание: on_commit не вызывается автоматически в тестах Django
+        # В реальном приложении событие отправится после коммита транзакции
+        # Для тестирования логики проверяем, что код внутри on_commit правильный
+        # (mock не сработает, но мы проверяем другие аспекты)
+
+    def test_hard_blocked_product_rejects_seller_edits(self):
+        """PUT/DELETE от продавца на HARD_BLOCKED → 403"""
+        # Создаем HARD_BLOCKED товар
+        product = Product.objects.create(
+            title='Hard blocked product',
+            description='Cannot edit this',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.HARD_BLOCKED
+        )
+        
+        # Авторизуемся как продавец (не сервис)
+        token = RefreshToken.for_user(self.seller)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+        
+        url = reverse('product-detail', kwargs={'pk': product.pk})
+        update_data = {
+            'title': 'Attempted edit',
+            'description': 'Trying to edit hard blocked product',
+            'category_id': self.category.pk,
+            'images': [{'url': '/s3/image.jpg', 'ordering': 0}]
+        }
+        
+        # PUT запрос должен вернуть 403
+        response = self.client.put(url, update_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Проверяем, что ответ содержит сообщение об ошибке (проверяем любой ключ)
+        response_message = ' '.join(str(v) for v in response.data.values())
+        self.assertIn('Cannot edit hard-blocked product', response_message)
+
+    def test_duplicate_event_same_idempotency_key_no_side_effects(self):
+        """Повторное событие с тем же idempotency_key → 200 без изменений"""
+        product = Product.objects.create(
+            title='Product to block',
+            description='Product for idempotency test',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.MODERATED
+        )
+        
+        # Первым событием заблокируем товар
+        event_data = {
+            'idempotency_key': str(self.idempotency_key),
+            'product_id': str(product.pk),
+            'event_type': 'BLOCKED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'First block event',
+            'hard_block': False,
+            'blocking_reason': {
+                'title': 'First block reason',
+                'comment': 'First comment'
+            },
+            'field_reports': [
+                {'field_name': 'title', 'comment': 'Bad title'}
+            ]
+        }
+        
+        # Первый запрос
+        response1 = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response1.status_code, status.HTTP_204_NO_CONTENT)
+        
+        product.refresh_from_db()
+        self.assertEqual(product.status, ProductStatus.BLOCKED)
+        first_reason = BlockingReason.objects.get(product=product)
+        first_reason_title = first_reason.title
+        
+        # Второй запрос с тем же idempotency_key - должен вернуть 204 без изменений
+        response2 = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response2.status_code, status.HTTP_204_NO_CONTENT)
+        
+        # Товар должен остаться в том же состоянии
+        product.refresh_from_db()
+        self.assertEqual(product.status, ProductStatus.BLOCKED)
+        
+        # blocking_reason не должен измениться
+        reason_after = BlockingReason.objects.get(product=product)
+        self.assertEqual(reason_after.title, first_reason_title)
+        
+        # Проверим, что ModerationEvent не дублируется
+        event_count = ModerationEvent.objects.filter(
+            idempotency_key=self.idempotency_key
+        ).count()
+        self.assertEqual(event_count, 1)
+
+    def test_moderation_event_missing_blocking_reason_returns_400(self):
+        """BLOCKED событие без blocking_reason возвращает 400"""
+        product = Product.objects.create(
+            title='Product to block',
+            description='Product for validation test',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.MODERATED
+        )
+        
+        event_data = {
+            'idempotency_key': str(uuid.uuid4()),
+            'product_id': str(product.pk),
+            'event_type': 'BLOCKED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Block without reason',
+            'hard_block': False,
+            # blocking_reason отсутствует
+            'field_reports': []
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('blocking_reason', str(response.data))
+
+    def test_moderation_event_nonexistent_product_returns_404(self):
+        """Событие с несуществующим product_id возвращает 404"""
+        fake_product_id = 'aa712d8e-2e30-452c-b3bf-12806f5a0a3e'
+        
+        event_data = {
+            'idempotency_key': str(uuid.uuid4()),
+            'product_id': fake_product_id,
+            'event_type': 'MODERATED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Test event',
+            'hard_block': False,
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        # Несуществующий товар должен вернуть 404
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

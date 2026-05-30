@@ -535,11 +535,23 @@ class UnreserveSerializer(serializers.Serializer):
 class ModerationEventSerializer(serializers.ModelSerializer):
     blocking_reason = BlockingReasonSerializer(default=None)
     field_reports = FieldReportSerializer(many=True, default=list)
+    product_id = serializers.UUIDField(write_only=True)
+    
     class Meta:
         model = ModerationEvent
         fields = ('idempotency_key', 'product_id', 'event_type', 'moderator_id', 'moderator_comment',
                   'blocking_reason', 'field_reports', 'hard_block', 'occurred_at')
-        
+        extra_kwargs = {
+            'idempotency_key': {'validators': []}
+        }
+    
+    def validate_product_id(self, value):
+        """Проверяем существование товара и возвращаем 404 если не найден"""
+        try:
+            return Product.objects.get(pk=value)
+        except Product.DoesNotExist:
+            raise NotFound({'detail': 'Товар не найден'})
+    
     def create(self, validated_data):
         blocking_reason_data = validated_data.pop('blocking_reason', None)
         field_reports_data = validated_data.pop('field_reports', [])
@@ -558,19 +570,18 @@ class ModerationEventSerializer(serializers.ModelSerializer):
             if existing_event:
                 return existing_event
             
-            try:
-                product = Product.objects.select_related('blocking_reason').select_for_update().get(pk=product.pk)
-            except Product.DoesNotExist:
-                raise NotFound({'detail': 'Продукт не найден'})
+            product = Product.objects.select_for_update().get(pk=product.pk)
 
             # проверка типа события
             if event_type_data == ModerationEvent.EventType.MODERATED:
-                # если blocking_reason нет, то из-за select_related вернётся None, а не ошибка (магия)
-                if product.blocking_reason:
+                # Удаляем blocking_reason, если он существует
+                try:
                     product.blocking_reason.delete()
+                except BlockingReason.DoesNotExist:
+                    pass
                 # удалить все field reports
                 product.field_reports.all().delete()
-                # обновляем толкьо статус, т.к. blocked вычилсяется само от статуса
+                # обновляем толкьо статус, т.к. blocked вычисляется само от статуса
                 product.status = ProductStatus.MODERATED
                 product.save(update_fields=['status'])
             elif event_type_data == ModerationEvent.EventType.BLOCKED:
@@ -578,8 +589,11 @@ class ModerationEventSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'blocking_reason': 'Необходимо указать причину блокировки'
                     })
-                if product.blocking_reason:
+                # Удаляем старый blocking_reason, если он существует
+                try:
                     product.blocking_reason.delete()
+                except BlockingReason.DoesNotExist:
+                    pass
                 BlockingReason.objects.create(
                     product=product,
                     title=blocking_reason_data['title'],
