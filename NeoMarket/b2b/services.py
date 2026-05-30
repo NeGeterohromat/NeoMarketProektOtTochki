@@ -68,3 +68,31 @@ def send_sku_out_of_stock_event(sku):
         import logging
         logger = logging.getLogger(__name__)
         logger.error(f"Failed to send SKU_OUT_OF_STOCK event for SKU {sku.pk}: {str(e)}")
+
+
+def send_product_blocked(idempotency_key: uuid, product_id: uuid, reason: str, is_hard_bloked: bool):
+    base_url = settings.B2C_URL
+    url = f"{base_url}/api/v1/b2b/events/"
+    headers = {
+        "X-Service-Key": settings.SERVICE_TOKEN,
+        "Content-Type": "application/json"
+    }
+    event_type = "PRODUCT_HARD_BLOCKED" if is_hard_bloked else "PRODUCT_BLOCKED"
+    payload = {
+        "event_type": event_type,
+        "idempotency_key": str(idempotency_key),
+        "occurred_at": timezone.now().isoformat(),
+        "payload": {
+            "product_id": str(product_id),
+            "reason": reason
+        }
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        # Логгируем ошибку, но не прерываем основной поток
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send PRODUCT_BLOCKED event for product {product_id}: {str(e)}")

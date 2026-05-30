@@ -9,6 +9,7 @@ from .views import (
     B2CListProductAPIView,
     ReserveAPIView,
     UnreserveAPIView,
+    ModerationEventsAPIVew,
 )
 
 
@@ -25,4 +26,5 @@ urlpatterns = [
     path('public/products/', B2CListProductAPIView.as_view(), name='b2c-product-list'),
     path('inventory/reserve/', ReserveAPIView.as_view(), name='reserve'),
     path('inventory/unreserve/', UnreserveAPIView.as_view(), name='unreserve'),
+    path('moderation/events/', ModerationEventsAPIVew.as_view(), name='moderation-events'),
 ]

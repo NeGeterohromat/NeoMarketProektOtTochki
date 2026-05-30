@@ -235,15 +235,15 @@ class InvoiceItem(UUIDModel):
     
 
 # не используется, потом надо будет убрать
-class Moderation(UUIDModel):
-    class Events(models.TextChoices):
-        EDITED = "EDITED", "Отредактировано"
+# class Moderation(UUIDModel):
+#     class Events(models.TextChoices):
+#         EDITED = "EDITED", "Отредактировано"
 
-    idempotency_key = models.UUIDField(default=uuid.uuid4)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation")
-    seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="moderation")
-    event = models.CharField(max_length=32, choices=Events)
-    date = models.DateTimeField(default=timezone.now)
+#     idempotency_key = models.UUIDField(default=uuid.uuid4)
+#     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation")
+#     seller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="moderation")
+#     event = models.CharField(max_length=32, choices=Events)
+#     date = models.DateTimeField(default=timezone.now)
 
 
 class BlockingReason(UUIDModel):
@@ -264,3 +264,22 @@ class Reservation(UUIDModel):
     order_id = models.UUIDField(unique=True)
     items = models.JSONField()
     reserved_at = models.DateTimeField(auto_now_add=True)
+
+
+class ModerationEvent(UUIDModel):
+    class EventType(models.TextChoices):
+        MODERATED = "MODERATED", "MODERATED"
+        BLOCKED = "BLOCKED", "BLOCKED"
+
+
+    idempotency_key = models.UUIDField(unique=True)
+    product_id = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation_events")
+    event_type = models.CharField(max_length=9, choices=EventType)
+    moderator_id = models.UUIDField()
+    moderator_comment = models.TextField()
+    hard_block = models.BooleanField(default=False, blank=True)
+    occurred_at = models.DateTimeField(auto_now_add=True)    
+    # blocking_reason_id = models.ForeignKey(BlockingReason, on_delete=models.CASCADE, related_name="moderation_events")
+    # field_reports = ...
+    # возможно можно даже сократить некоторые поля, или наоборот добавить то что выше.
+    # главное ведь зафиксировать idempotency_key

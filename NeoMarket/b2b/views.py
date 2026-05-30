@@ -30,6 +30,7 @@ from .serializers import (
     B2CListProductSerializer,
     ReserveSerializer,
     UnreserveSerializer,
+    ModerationEventSerializer,
 )
 from .pagination import B2CProductPagination
 from .filters import B2CProductFilter
@@ -277,3 +278,14 @@ class UnreserveAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+    
+
+class ModerationEventsAPIVew(APIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+
+    def post(self, request, *args, **kwargs):
+        serializer = ModerationEventSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)
