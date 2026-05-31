@@ -157,7 +157,7 @@ class B2CListProductAPIView(generics.ListAPIView):
     pagination_class = B2CProductPagination
     filter_backends = [df_filters.DjangoFilterBackend, drf_filters.OrderingFilter]
     filterset_class = B2CProductFilter
-    ordering_fields = ['min_price', 'created_at']
+    ordering_fields = ['min_price', 'created_at', 'views']
     ordering = ['-created_at']
     ordering_param = 'sort'
 
@@ -175,8 +175,10 @@ class B2CListProductAPIView(generics.ListAPIView):
                             transformed_orderings.append('min_price')
                         elif ordering == 'price_desc':
                             transformed_orderings.append('-min_price')
-                        elif ordering == 'date_desc':
+                        elif ordering == 'created_desc':
                             transformed_orderings.append('-created_at')
+                        elif ordering == 'popular':
+                            transformed_orderings.append('-views')
                         else:
                             transformed_orderings.append(ordering)
                     if transformed_orderings:

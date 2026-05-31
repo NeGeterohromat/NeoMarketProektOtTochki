@@ -987,13 +987,35 @@ class B2CListProductAPITestCase(APITestCase):
         prices = [p['min_price'] for p in response.data['results']]
         self.assertEqual(prices, sorted(prices, reverse=True))
 
-    def test_sort_by_date_desc(self):
+    def test_sort_by_created_desc(self):
         """Сортировка по дате (новые сначала)"""
-        response = self.client.get(self.url + '?sort=date_desc')
+        response = self.client.get(self.url + '?sort=created_desc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Новые товары должны быть в начале
         created_dates = [p['created_at'] for p in response.data['results']]
         self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_sort_by_popular(self):
+        """Сортировка по популярности (по views, убывание)"""
+        # Устанавливаем разные значения views для товаров
+        self.moderated_product.views = 100
+        self.moderated_product.save()
+        
+        self.same_seller_product.views = 300
+        self.same_seller_product.save()
+        
+        self.other_seller_product.views = 50
+        self.other_seller_product.save()
+        
+        response = self.client.get(self.url + '?sort=popular')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        titles = [p['title'] for p in response.data['results']]
+        # Товары должны быть отсортированы по убыванию views
+        # Samsung Galaxy (300) -> iPhone 15 (100) -> Sony Xperia (50)
+        self.assertEqual(titles[0], 'Samsung Galaxy')
+        self.assertEqual(titles[1], 'iPhone 15')
+        self.assertEqual(titles[2], 'Sony Xperia')
 
     def test_filter_by_characteristics(self):
         """Фильтрация по характеристикам"""
