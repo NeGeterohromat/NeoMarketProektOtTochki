@@ -336,8 +336,21 @@ class ModeratorProductDetailSerializer(SellerProductDetailSerializer):
     skus = ModeratorSKUDetailSerializer(many=True)
 
 
+class B2CSKUDetailSerializer(serializers.ModelSerializer):
+    images = SKUImageSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
+    active_quantity = serializers.SerializerMethodField()
+    class Meta:
+        model = SKU
+        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article',
+                  'discount', 'images', 'characteristics', 'created_at', 'updated_at')
+        
+    def get_active_quantity(self, obj):
+        return obj.stock_quantity - obj.reserved_quantity
+
+
 class B2CListProductSerializer(serializers.ModelSerializer):
-    skus = ModeratorSKUDetailSerializer(many=True)
+    skus = B2CSKUDetailSerializer(many=True)
     cover_image = serializers.SerializerMethodField()
     min_price = serializers.IntegerField()
     
