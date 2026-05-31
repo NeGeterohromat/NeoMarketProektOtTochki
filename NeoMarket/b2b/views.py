@@ -28,6 +28,7 @@ from .serializers import (
     SKUUpdateSerializer,
     SKUDetailSerializer,
     B2CListProductSerializer,
+    B2CBatchProductSerializer,
     B2CDetailProductSerializer,
     B2CSKUDetailSerializer,
     ReserveSerializer,
@@ -214,7 +215,7 @@ class B2CListProductAPIView(generics.ListAPIView):
             queryset = backend().filter_queryset(self.request, queryset, self)
         
         return queryset
-    
+
 
 class B2CDetailProductAPIView(generics.RetrieveAPIView):
     authentication_classes = [ServiceKeyAuthentication]
@@ -261,6 +262,59 @@ class B2CDetailSKUAPIView(generics.RetrieveAPIView):
             ),
             'characteristics'
         )
+    
+
+class B2CBatchProductAPIView(APIView):
+    """
+    Массовое получение продуктов по списку ID.
+    Принимает POST запрос с {"product_ids": ["uuid", ...]}
+    Возвращает список найденных продуктов.
+    """
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+
+    def post(self, request, *args, **kwargs):
+        # Валидируем входные данные
+        serializer = B2CBatchProductSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        product_ids = serializer.validated_data['product_ids']
+        
+        if not product_ids:
+            return Response([], status=status.HTTP_200_OK)
+        
+        # Получаем продукты с предзагрузкой связанных объектов
+        products = Product.objects.filter(
+            id__in=product_ids,
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        ).annotate(min_price=Min('skus__price')).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
+        # Сериализуем продукты
+        product_data = B2CListProductSerializer(
+            products, 
+            many=True, 
+            context={'request': request}
+        ).data
+
+        return Response(product_data, status=status.HTTP_200_OK)
     
 
 class SKUCreateAPIView(generics.CreateAPIView):

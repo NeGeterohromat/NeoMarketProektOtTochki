@@ -369,6 +369,13 @@ class B2CListProductSerializer(serializers.ModelSerializer):
         return None
 
 
+class B2CBatchProductSerializer(serializers.Serializer):
+    product_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=True
+    )
+
+
 class B2CDetailProductSerializer(serializers.ModelSerializer):
     skus = B2CSKUDetailSerializer(many=True)
     images = ProductImageSerializer(many=True)
