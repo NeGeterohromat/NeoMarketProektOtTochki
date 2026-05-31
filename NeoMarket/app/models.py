@@ -58,6 +58,7 @@ class Product(UUIDModel):
     slug = models.SlugField(max_length=255, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+    views = models.PositiveIntegerField(blank=True, default=0)
 
     class Meta:
         verbose_name = "Товар"

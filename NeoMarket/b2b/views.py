@@ -1,6 +1,7 @@
 import uuid
 
-from django.db.models import Min, F
+from django.db.models import Min, F, Prefetch
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
@@ -13,7 +14,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from django_filters import rest_framework as df_filters
 
-from app.models import Category, Product, SKU, Reservation
+from app.models import Category, Product, SKU, Reservation, ProductImage, SKUImage
 from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
@@ -28,6 +29,9 @@ from .serializers import (
     SKUUpdateSerializer,
     SKUDetailSerializer,
     B2CListProductSerializer,
+    B2CBatchProductSerializer,
+    B2CDetailProductSerializer,
+    B2CSKUDetailSerializer,
     ReserveSerializer,
     UnreserveSerializer,
     ModerationEventSerializer,
@@ -148,19 +152,43 @@ class B2CListProductAPIView(generics.ListAPIView):
     authentication_classes = [ServiceKeyAuthentication]
     permission_classes = [IsService]
     
-    queryset = Product.objects.filter(
-        status="MODERATED", 
-        deleted=False,
-        skus__stock_quantity__gt=F('skus__reserved_quantity')
-    ).prefetch_related('skus', 'images').annotate(min_price=Min('skus__price'))
     serializer_class = B2CListProductSerializer
     pagination_class = B2CProductPagination
     filter_backends = [df_filters.DjangoFilterBackend, drf_filters.OrderingFilter]
     filterset_class = B2CProductFilter
-    ordering_fields = ['min_price', 'created_at']
+    ordering_fields = ['min_price', 'created_at', 'views']
     ordering = ['-created_at']
     ordering_param = 'sort'
 
+    def get_queryset(self):
+        """
+        Предзагружаем связанные объекты для устранения N+1 запросов:
+        - images (с сортировкой для cover_image)
+        - characteristics
+        - skus с их images и characteristics
+        """
+        return Product.objects.filter(
+            status="MODERATED", 
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        ).annotate(min_price=Min('skus__price')).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
     def filter_queryset(self, queryset):
         """Переопределяем фильтрацию, чтобы обработать кастомные параметры сортировки."""
         for backend in list(self.filter_backends):
@@ -175,18 +203,181 @@ class B2CListProductAPIView(generics.ListAPIView):
                             transformed_orderings.append('min_price')
                         elif ordering == 'price_desc':
                             transformed_orderings.append('-min_price')
-                        elif ordering == 'date_desc':
+                        elif ordering == 'created_desc':
                             transformed_orderings.append('-created_at')
+                        elif ordering == 'popular':
+                            transformed_orderings.append('-views')
                         else:
                             transformed_orderings.append(ordering)
                     if transformed_orderings:
                         queryset = queryset.order_by(*transformed_orderings)
                 continue
-            
+
             queryset = backend().filter_queryset(self.request, queryset, self)
         
         return queryset
 
+
+class B2CDetailProductAPIView(generics.RetrieveAPIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    serializer_class = B2CDetailProductSerializer
+
+    def get_queryset(self):
+        return Product.objects.filter(
+            status="MODERATED", 
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        ).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+
+
+class B2CDetailSKUAPIView(generics.RetrieveAPIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    serializer_class = B2CSKUDetailSerializer
+
+    def get_queryset(self):
+        return SKU.objects.filter(
+            product__status="MODERATED",
+            product__deleted=False
+        ).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=SKUImage.objects.order_by('ordering')
+            ),
+            'characteristics'
+        )
+    
+
+class B2CBatchProductAPIView(APIView):
+    """
+    Массовое получение продуктов по списку ID.
+    Принимает POST запрос с {"product_ids": ["uuid", ...]}
+    Возвращает список найденных продуктов.
+    """
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+
+    def post(self, request, *args, **kwargs):
+        # Валидируем входные данные
+        serializer = B2CBatchProductSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        product_ids = serializer.validated_data['product_ids']
+        
+        if not product_ids:
+            return Response([], status=status.HTTP_200_OK)
+        
+        # Получаем продукты с предзагрузкой связанных объектов
+        products = Product.objects.filter(
+            id__in=product_ids,
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        ).annotate(min_price=Min('skus__price')).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
+        # Сериализуем продукты
+        product_data = B2CListProductSerializer(
+            products, 
+            many=True, 
+            context={'request': request}
+        ).data
+
+        return Response(product_data, status=status.HTTP_200_OK)
+    
+
+class B2CSimilarProductAPIView(APIView):
+    """
+    Получение похожих продуктов (из той же категории).
+    Возвращает другие товары из той же категории, что и указанный товар.
+    """
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+
+    def get(self, request, *args, **kwargs):
+        # Получаем целевой товар
+        target_product = self._get_target_product(request, kwargs)
+        
+        # Получаем лимит из query-параметров (по умолчанию 10)
+        limit = request.query_params.get('limit', 10)
+        try:
+            limit = int(limit)
+        except (ValueError, TypeError):
+            limit = 10
+        
+        # Получаем похожие товары из той же категории, исключая сам товар
+        similar_products = Product.objects.filter(
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity'),
+            category=target_product.category
+        ).exclude(id=target_product.id).distinct().annotate(
+            min_price=Min('skus__price')
+        ).order_by('?')[:limit].prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
+        # Сериализуем и возвращаем
+        serializer = B2CListProductSerializer(similar_products, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _get_target_product(self, request, kwargs):
+        """Получаем товар по pk для определения категории"""
+        queryset = Product.objects.filter(
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        )
+        pk = kwargs['pk']
+        product = get_object_or_404(queryset, pk=pk)
+        return product
+    
 
 class SKUCreateAPIView(generics.CreateAPIView):
     queryset = SKU.objects.all()
@@ -237,7 +428,7 @@ class ReserveAPIView(generics.CreateAPIView):
     serializer_class = ReserveSerializer
     authentication_classes = [ServiceKeyAuthentication]
     permission_classes = [IsService]
-    
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)

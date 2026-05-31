@@ -872,7 +872,11 @@ class B2CListProductAPITestCase(APITestCase):
         """Возвращаются только MODERATED товары с active_quantity > 0"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        self.assertIn('items', response.data)
+        self.assertIn('total_count', response.data)
+        self.assertIn('limit', response.data)
+        self.assertIn('offset', response.data)
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertIn('Samsung Galaxy', titles)
         self.assertIn('Sony Xperia', titles)
@@ -883,7 +887,7 @@ class B2CListProductAPITestCase(APITestCase):
         """Заблокированные товары не возвращаются"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertNotIn('Blocked Phone', titles)
         self.assertNotIn('Hard blocked Phone', titles)
 
@@ -891,7 +895,7 @@ class B2CListProductAPITestCase(APITestCase):
         """cost_price не возвращается"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        iphone = next(p for p in response.data['items'] if p['title'] == 'iPhone 15')
         self.assertEqual(iphone.get('cost_price'), None)
 
     def test_cover_image_returns_first_image_by_order(self):
@@ -899,7 +903,7 @@ class B2CListProductAPITestCase(APITestCase):
         ProductImage.objects.create(product=self.moderated_product, url='/images/iphone-back.jpg', ordering=1)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        iphone = next(p for p in response.data['items'] if p['title'] == 'iPhone 15')
         self.assertEqual(iphone['cover_image'], '/images/iphone.jpg')
 
     def test_min_price_is_calculated_correctly(self):
@@ -907,14 +911,14 @@ class B2CListProductAPITestCase(APITestCase):
         SKU.objects.create(product=self.moderated_product, name='512GB', price=150000, stock_quantity=5)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        iphone = next(p for p in response.data['results'] if p['title'] == 'iPhone 15')
+        iphone = next(p for p in response.data['items'] if p['title'] == 'iPhone 15')
         self.assertEqual(iphone['min_price'], 100000)
 
     def test_filter_by_category_id(self):
         """Фильтрация по category_id"""
         response = self.client.get(self.url + f'?category_id={self.category1.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertNotIn('Sony Xperia', titles)  # другая категория
 
@@ -922,7 +926,7 @@ class B2CListProductAPITestCase(APITestCase):
         """Фильтрация по seller_id"""
         response = self.client.get(self.url + f'?seller_id={self.user.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertNotIn('Sony Xperia', titles)  # другой продавец
 
@@ -930,7 +934,7 @@ class B2CListProductAPITestCase(APITestCase):
         """Текстовый поиск по title"""
         response = self.client.get(self.url + '?search=iPhone')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertNotIn('Samsung Galaxy', titles)
 
@@ -938,7 +942,7 @@ class B2CListProductAPITestCase(APITestCase):
         """Текстовый поиск по description"""
         response = self.client.get(self.url + '?search=smartphone')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertIn('Samsung Galaxy', titles)
 
@@ -946,20 +950,20 @@ class B2CListProductAPITestCase(APITestCase):
         """Фильтрация по списку UUID"""
         response = self.client.get(self.url + f'?ids={self.moderated_product.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 1)
-        self.assertEqual(response.data['results'][0]['id'], str(self.moderated_product.pk))
+        self.assertEqual(len(response.data['items']), 1)
+        self.assertEqual(response.data['items'][0]['id'], str(self.moderated_product.pk))
 
     def test_batch_ids_returns_visible_subset(self):
         """Фильтрация по нескольким UUID"""
         response = self.client.get(self.url + f'?ids={self.moderated_product.pk},{self.same_seller_product.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(len(response.data['items']), 2)
 
     def test_filter_by_min_price(self):
         """Фильтрация по минимальной цене"""
         response = self.client.get(self.url + '?min_price=90000')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)  # 100000
         self.assertNotIn('Samsung Galaxy', titles)  # 80000
         self.assertNotIn('Sony Xperia', titles)  # 70000
@@ -968,7 +972,7 @@ class B2CListProductAPITestCase(APITestCase):
         """Фильтрация по максимальной цене"""
         response = self.client.get(self.url + '?max_price=75000')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertNotIn('iPhone 15', titles)  # 100000
         self.assertNotIn('Samsung Galaxy', titles)  # 80000
         self.assertIn('Sony Xperia', titles)  # 70000
@@ -977,23 +981,45 @@ class B2CListProductAPITestCase(APITestCase):
         """Сортировка по цене (возрастание)"""
         response = self.client.get(self.url + '?sort=price_asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        prices = [p['min_price'] for p in response.data['results']]
+        prices = [p['min_price'] for p in response.data['items']]
         self.assertEqual(prices, sorted(prices))
 
     def test_sort_by_price_desc(self):
         """Сортировка по цене (убывание)"""
         response = self.client.get(self.url + '?sort=price_desc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        prices = [p['min_price'] for p in response.data['results']]
+        prices = [p['min_price'] for p in response.data['items']]
         self.assertEqual(prices, sorted(prices, reverse=True))
 
-    def test_sort_by_date_desc(self):
+    def test_sort_by_created_desc(self):
         """Сортировка по дате (новые сначала)"""
-        response = self.client.get(self.url + '?sort=date_desc')
+        response = self.client.get(self.url + '?sort=created_desc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Новые товары должны быть в начале
-        created_dates = [p['created_at'] for p in response.data['results']]
+        created_dates = [p['created_at'] for p in response.data['items']]
         self.assertEqual(created_dates, sorted(created_dates, reverse=True))
+
+    def test_sort_by_popular(self):
+        """Сортировка по популярности (по views, убывание)"""
+        # Устанавливаем разные значения views для товаров
+        self.moderated_product.views = 100
+        self.moderated_product.save()
+        
+        self.same_seller_product.views = 300
+        self.same_seller_product.save()
+        
+        self.other_seller_product.views = 50
+        self.other_seller_product.save()
+        
+        response = self.client.get(self.url + '?sort=popular')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        titles = [p['title'] for p in response.data['items']]
+        # Товары должны быть отсортированы по убыванию views
+        # Samsung Galaxy (300) -> iPhone 15 (100) -> Sony Xperia (50)
+        self.assertEqual(titles[0], 'Samsung Galaxy')
+        self.assertEqual(titles[1], 'iPhone 15')
+        self.assertEqual(titles[2], 'Sony Xperia')
 
     def test_filter_by_characteristics(self):
         """Фильтрация по характеристикам"""
@@ -1001,7 +1027,7 @@ class B2CListProductAPITestCase(APITestCase):
         ProductCharacteristic.objects.create(product=self.same_seller_product, name='brand', value='Samsung')
         response = self.client.get(self.url + '?filters[brand]=Apple')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        titles = [p['title'] for p in response.data['results']]
+        titles = [p['title'] for p in response.data['items']]
         self.assertIn('iPhone 15', titles)
         self.assertNotIn('Samsung Galaxy', titles)
 

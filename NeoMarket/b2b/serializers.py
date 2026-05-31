@@ -336,8 +336,21 @@ class ModeratorProductDetailSerializer(SellerProductDetailSerializer):
     skus = ModeratorSKUDetailSerializer(many=True)
 
 
+class B2CSKUDetailSerializer(serializers.ModelSerializer):
+    images = SKUImageSerializer(many=True)
+    characteristics = SKUCharacteristicSerializer(many=True)
+    active_quantity = serializers.SerializerMethodField()
+    class Meta:
+        model = SKU
+        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article',
+                  'discount', 'images', 'characteristics', 'created_at', 'updated_at')
+        
+    def get_active_quantity(self, obj):
+        return obj.stock_quantity - obj.reserved_quantity
+
+
 class B2CListProductSerializer(serializers.ModelSerializer):
-    skus = ModeratorSKUDetailSerializer(many=True)
+    skus = B2CSKUDetailSerializer(many=True)
     cover_image = serializers.SerializerMethodField()
     min_price = serializers.IntegerField()
     
@@ -347,9 +360,31 @@ class B2CListProductSerializer(serializers.ModelSerializer):
                   'status', 'characteristics', 'skus', 'created_at')
     
     def get_cover_image(self, obj):
-        # images уже предзагружены через prefetch_related('images')
-        image = obj.images.order_by('ordering').first()
-        return image.url if image else None
+        # images предзагружены через Prefetch с order_by('ordering')
+        # используем предзагруженный менеджер, чтобы избежать дополнительного SQL запроса
+        images = obj.images.all()
+        if images:
+            # Первый элемент уже отсортирован благодаря Prefetch
+            return images[0].url if hasattr(images[0], 'url') else None
+        return None
+
+
+class B2CBatchProductSerializer(serializers.Serializer):
+    product_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=True
+    )
+
+
+class B2CDetailProductSerializer(serializers.ModelSerializer):
+    skus = B2CSKUDetailSerializer(many=True)
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(many=True)
+    
+    class Meta:
+        model = Product
+        fields = ('id', 'seller_id', 'category_id', 'title', 'slug', 'description', 'status',
+                  'images', 'characteristics', 'skus', 'created_at', 'updated_at')
 
 
 class ReservationItemSerializer(serializers.Serializer):
