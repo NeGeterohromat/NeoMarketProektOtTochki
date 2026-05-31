@@ -29,6 +29,7 @@ from .serializers import (
     SKUDetailSerializer,
     B2CListProductSerializer,
     B2CDetailProductSerializer,
+    B2CSKUDetailSerializer,
     ReserveSerializer,
     UnreserveSerializer,
     ModerationEventSerializer,
@@ -244,6 +245,24 @@ class B2CDetailProductAPIView(generics.RetrieveAPIView):
         )
 
 
+class B2CDetailSKUAPIView(generics.RetrieveAPIView):
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+    serializer_class = B2CSKUDetailSerializer
+
+    def get_queryset(self):
+        return SKU.objects.filter(
+            product__status="MODERATED",
+            product__deleted=False
+        ).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=SKUImage.objects.order_by('ordering')
+            ),
+            'characteristics'
+        )
+    
+
 class SKUCreateAPIView(generics.CreateAPIView):
     queryset = SKU.objects.all()
     serializer_class = SKUCreateSerializer
@@ -293,7 +312,7 @@ class ReserveAPIView(generics.CreateAPIView):
     serializer_class = ReserveSerializer
     authentication_classes = [ServiceKeyAuthentication]
     permission_classes = [IsService]
-    
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
