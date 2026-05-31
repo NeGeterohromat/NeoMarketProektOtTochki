@@ -1,6 +1,7 @@
 import uuid
 
 from django.db.models import Min, F, Prefetch
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
@@ -315,6 +316,67 @@ class B2CBatchProductAPIView(APIView):
         ).data
 
         return Response(product_data, status=status.HTTP_200_OK)
+    
+
+class B2CSimilarProductAPIView(APIView):
+    """
+    Получение похожих продуктов (из той же категории).
+    Возвращает другие товары из той же категории, что и указанный товар.
+    """
+    authentication_classes = [ServiceKeyAuthentication]
+    permission_classes = [IsService]
+
+    def get(self, request, *args, **kwargs):
+        # Получаем целевой товар
+        target_product = self._get_target_product(request, kwargs)
+        
+        # Получаем лимит из query-параметров (по умолчанию 10)
+        limit = request.query_params.get('limit', 10)
+        try:
+            limit = int(limit)
+        except (ValueError, TypeError):
+            limit = 10
+        
+        # Получаем похожие товары из той же категории, исключая сам товар
+        similar_products = Product.objects.filter(
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity'),
+            category=target_product.category
+        ).exclude(id=target_product.id).distinct().annotate(
+            min_price=Min('skus__price')
+        ).order_by('?')[:limit].prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
+        # Сериализуем и возвращаем
+        serializer = B2CListProductSerializer(similar_products, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _get_target_product(self, request, kwargs):
+        """Получаем товар по pk для определения категории"""
+        queryset = Product.objects.filter(
+            status="MODERATED",
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        )
+        pk = kwargs['pk']
+        product = get_object_or_404(queryset, pk=pk)
+        return product
     
 
 class SKUCreateAPIView(generics.CreateAPIView):
