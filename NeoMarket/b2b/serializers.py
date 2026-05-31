@@ -369,6 +369,17 @@ class B2CListProductSerializer(serializers.ModelSerializer):
         return None
 
 
+class B2CDetailProductSerializer(serializers.ModelSerializer):
+    skus = B2CSKUDetailSerializer(many=True)
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(many=True)
+    
+    class Meta:
+        model = Product
+        fields = ('id', 'seller_id', 'category_id', 'title', 'slug', 'description', 'status',
+                  'images', 'characteristics', 'skus', 'created_at', 'updated_at')
+
+
 class ReservationItemSerializer(serializers.Serializer):
     sku_id = serializers.UUIDField()
     quantity = serializers.IntegerField()
