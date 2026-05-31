@@ -139,17 +139,6 @@ class SKUNestedSerializer(serializers.ModelSerializer):
         fields = ('id', 'name', 'price', 'stock_quantity', 'article',)
 
 
-# использовать SellerProductDetailSerializer вместо данного сериализатора
-class ProductDetailSerializer(serializers.ModelSerializer):
-    images = ProductImageSerializer(many=True)
-    characteristics = ProductCharacteristicsSerializer(many=True)
-    skus = SKUNestedSerializer(many=True)
-    class Meta:
-        model = Product
-        fields = ('id', 'seller_id', 'category_id', 'title', 'description',
-                  'status', 'images', 'characteristics', 'skus', 'created_at', 'updated_at')
-
-
 class SKUCharacteristicSerializer(serializers.ModelSerializer):
     class Meta:
         model = SKUCharacteristic
@@ -297,6 +286,23 @@ class FieldReportSerializer(serializers.ModelSerializer):
         model = FieldReport
         fields = ('id', 'field_name', 'sku_id', 'comment')
         read_only_fields = ('id',)
+
+
+class ProductDetailSerializer(serializers.ModelSerializer):
+    images = ProductImageSerializer(many=True)
+    characteristics = ProductCharacteristicsSerializer(many=True)
+    skus = SKUNestedSerializer(many=True)
+    blocking_reason_id = serializers.UUIDField(source='blocking_reason.id', allow_null=True)
+    field_reports = FieldReportSerializer(many=True, default=list)
+    blocked = serializers.SerializerMethodField()
+    class Meta:
+        model = Product
+        fields = ('id', 'seller_id', 'category_id', 'title', 'description', 'blocked',
+                  'status', 'moderator_comment', 'images', 'characteristics', 'deleted', 'slug',
+                  'skus', 'blocking_reason_id', 'field_reports', 'created_at', 'updated_at')
+        
+    def get_blocked(self, obj):
+        return obj.status in [ProductStatus.BLOCKED, ProductStatus.HARD_BLOCKED]
 
 
 class SellerProductDetailSerializer(serializers.ModelSerializer):

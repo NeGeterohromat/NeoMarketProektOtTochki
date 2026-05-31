@@ -20,7 +20,7 @@ from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
-    # ProductDetailSerializer,
+    ProductDetailSerializer,
     SellerProductDetailSerializer,
     ModeratorProductDetailSerializer,
     SKUCreateSerializer,
@@ -67,7 +67,7 @@ class ProductCreateAPIView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
-        response_serializer = SellerProductDetailSerializer(product, context=self.get_serializer_context())
+        response_serializer = ProductDetailSerializer(product, context=self.get_serializer_context())
         headers = self.get_success_headers(serializer.data)
         return Response(
             response_serializer.data, 
