@@ -1,6 +1,6 @@
 import uuid
 
-from django.db.models import Min, F
+from django.db.models import Min, F, Prefetch
 from django.utils import timezone
 
 from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
@@ -13,7 +13,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from django_filters import rest_framework as df_filters
 
-from app.models import Category, Product, SKU, Reservation
+from app.models import Category, Product, SKU, Reservation, ProductImage, SKUImage
 from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
@@ -148,11 +148,6 @@ class B2CListProductAPIView(generics.ListAPIView):
     authentication_classes = [ServiceKeyAuthentication]
     permission_classes = [IsService]
     
-    queryset = Product.objects.filter(
-        status="MODERATED", 
-        deleted=False,
-        skus__stock_quantity__gt=F('skus__reserved_quantity')
-    ).prefetch_related('skus', 'images').annotate(min_price=Min('skus__price'))
     serializer_class = B2CListProductSerializer
     pagination_class = B2CProductPagination
     filter_backends = [df_filters.DjangoFilterBackend, drf_filters.OrderingFilter]
@@ -161,6 +156,35 @@ class B2CListProductAPIView(generics.ListAPIView):
     ordering = ['-created_at']
     ordering_param = 'sort'
 
+    def get_queryset(self):
+        """
+        Предзагружаем связанные объекты для устранения N+1 запросов:
+        - images (с сортировкой для cover_image)
+        - characteristics
+        - skus с их images и characteristics
+        """
+        return Product.objects.filter(
+            status="MODERATED", 
+            deleted=False,
+            skus__stock_quantity__gt=F('skus__reserved_quantity')
+        ).annotate(min_price=Min('skus__price')).prefetch_related(
+            Prefetch(
+                'images',
+                queryset=ProductImage.objects.order_by('ordering')
+            ),
+            'characteristics',
+            Prefetch(
+                'skus',
+                queryset=SKU.objects.prefetch_related(
+                    Prefetch(
+                        'images',
+                        queryset=SKUImage.objects.order_by('ordering')
+                    ),
+                    'characteristics'
+                )
+            )
+        )
+    
     def filter_queryset(self, queryset):
         """Переопределяем фильтрацию, чтобы обработать кастомные параметры сортировки."""
         for backend in list(self.filter_backends):
@@ -184,7 +208,7 @@ class B2CListProductAPIView(generics.ListAPIView):
                     if transformed_orderings:
                         queryset = queryset.order_by(*transformed_orderings)
                 continue
-            
+
             queryset = backend().filter_queryset(self.request, queryset, self)
         
         return queryset

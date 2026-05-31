@@ -360,9 +360,13 @@ class B2CListProductSerializer(serializers.ModelSerializer):
                   'status', 'characteristics', 'skus', 'created_at')
     
     def get_cover_image(self, obj):
-        # images уже предзагружены через prefetch_related('images')
-        image = obj.images.order_by('ordering').first()
-        return image.url if image else None
+        # images предзагружены через Prefetch с order_by('ordering')
+        # используем предзагруженный менеджер, чтобы избежать дополнительного SQL запроса
+        images = obj.images.all()
+        if images:
+            # Первый элемент уже отсортирован благодаря Prefetch
+            return images[0].url if hasattr(images[0], 'url') else None
+        return None
 
 
 class ReservationItemSerializer(serializers.Serializer):
