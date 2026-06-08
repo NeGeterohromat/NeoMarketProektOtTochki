@@ -1672,3 +1672,104 @@ class ModerationEventsAPITestCase(APITestCase):
         response = self.client.post(self.url, event_data, format='json')
         # Несуществующий товар должен вернуть 404
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+class ProductDeleteAPITestCase(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user',
+            password='12345678User',
+            email='user@mail.com',
+            company_name='urfu',
+        )
+        self.other_user = User.objects.create_user(
+            username='user2',
+            password='12345678User',
+            email='user2@mail.com',
+            company_name='urfu',
+        )
+
+        token = RefreshToken.for_user(self.user)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        self.category = Category.objects.create(name='category_delete')
+
+        self.product = Product.objects.create(
+            title='iPhone 15 Pro Max',
+            description='Флагманский смартфон',
+            category=self.category,
+            seller=self.user,
+            status='MODERATED'
+        )
+        self.sku = SKU.objects.create(
+            product=self.product,
+            name='128GB',
+            price=100000,
+            stock_quantity=10,
+        )
+        self.other_product = Product.objects.create(
+            title='Samsung Galaxy',
+            description='Смартфон Samsung',
+            category=self.category,
+            seller=self.other_user,
+            status='MODERATED'
+        )
+
+    def test_delete_sets_deleted_true(self):
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.deleted)
+
+    def test_delete_already_deleted_returns_400(self):
+        self.product.deleted = True
+        self.product.save()
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['code'], 'INVALID_REQUEST')
+
+    def test_delete_others_product_returns_403(self):
+        url = reverse('product-detail', kwargs={'pk': self.other_product.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['code'], 'NOT_OWNER')
+
+    def test_deleted_product_not_in_seller_list(self):
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        self.client.delete(url)
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.deleted)
+
+    @responses.activate
+    def test_delete_emits_event_to_moderation(self):
+        mod_url = f"{settings.MODERATION_URL}/api/v1/events/product"
+        responses.add(method=responses.POST, url=mod_url, json={"status": "ok"}, status=200)
+        b2c_url = f"{settings.B2C_URL}/api/v1/events/product"
+        responses.add(method=responses.POST, url=b2c_url, json={}, status=200)
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mod_calls = [c for c in responses.calls if settings.MODERATION_URL in c.request.url]
+        self.assertEqual(len(mod_calls), 1)
+        import json
+        sent_body = json.loads(mod_calls[0].request.body)
+        self.assertEqual(sent_body['event'], 'DELETED')
+        self.assertEqual(sent_body['product_id'], str(self.product.pk))
+
+    @responses.activate
+    def test_delete_emits_product_deleted_to_b2c(self):
+        mod_url = f"{settings.MODERATION_URL}/api/v1/events/product"
+        responses.add(method=responses.POST, url=mod_url, json={}, status=200)
+        b2c_url = f"{settings.B2C_URL}/api/v1/events/product"
+        responses.add(method=responses.POST, url=b2c_url, json={"status": "ok"}, status=200)
+        url = reverse('product-detail', kwargs={'pk': self.product.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        b2c_calls = [c for c in responses.calls if settings.B2C_URL in c.request.url]
+        self.assertEqual(len(b2c_calls), 1)
+        import json
+        sent_body = json.loads(b2c_calls[0].request.body)
+        self.assertEqual(sent_body['event'], 'PRODUCT_DELETED')
+        self.assertIn('sku_ids', sent_body)        
