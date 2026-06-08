@@ -497,10 +497,11 @@ class UnreserveSerializer(serializers.Serializer):
         
         try:
             self.reservation = Reservation.objects.get(order_id=order_id)
+            self.reservation_exists = True
         except Reservation.DoesNotExist:
-            raise serializers.ValidationError(
-                {'order_id': 'Резервация с таким order_id не найдена'}
-            )
+            self.reservation = None
+            self.reservation_exists = False
+            return data
         
         for item in data['items']:
             sku_id = str(item['sku_id'])
@@ -529,6 +530,9 @@ class UnreserveSerializer(serializers.Serializer):
         
         order_id = self.validated_data['order_id']
         items_data = self.validated_data['items']
+
+        if not self.reservation_exists:
+            return None
         
         with transaction.atomic():
             reservation = Reservation.objects.select_for_update().get(order_id=order_id)

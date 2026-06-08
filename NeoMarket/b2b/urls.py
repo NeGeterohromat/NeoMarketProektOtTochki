@@ -32,7 +32,7 @@ urlpatterns = [
     path('public/products/<uuid:pk>/', B2CDetailProductAPIView.as_view(), name='b2c-product-detail'),
     path('public/products/<uuid:pk>/similar/', B2CSimilarProductAPIView.as_view(), name='b2c-product-similar'),
     path('public/skus/<uuid:pk>/', B2CDetailSKUAPIView.as_view(), name='b2c-sku-detail'),
-    path('inventory/reserve/', ReserveAPIView.as_view(), name='reserve'),
-    path('inventory/unreserve/', UnreserveAPIView.as_view(), name='unreserve'),
+    path('inventory/reserve', ReserveAPIView.as_view(), name='reserve'),
+    path('inventory/unreserve', UnreserveAPIView.as_view(), name='unreserve'),
     path('moderation/events/', ModerationEventsAPIVew.as_view(), name='moderation-events'),
 ]
