@@ -374,8 +374,9 @@ class ProductRetrieveAPITestCase(APITestCase):
         response = self.client.get(url, format='json')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['blocking_reason']['title'], self.blocking_reason.title)
-        self.assertEqual(response.data['blocking_reason']['comment'], self.blocking_reason.comment)
+        self.assertEqual(response.data['blocking_reason_id'], str(self.blocking_reason.id))
+        self.assertEqual(response.data['blocking_reason_title'], self.blocking_reason.title)
+        self.assertEqual(response.data['blocking_reason_comment'], self.blocking_reason.comment)
         self.assertIs(response.data['blocked'], True)
 
     def test_get_moderated_product_returns_full_payload(self):
@@ -385,12 +386,13 @@ class ProductRetrieveAPITestCase(APITestCase):
         response = self.client.get(url, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get('skus')[0].get('cost_price'), 10)
-        self.assertEqual(response.data.get('blocking_reason'), None)
+        self.assertEqual(response.data.get('blocking_reason_id'), None)
 
     def test_get_blocked_product_returns_blocking_reason_and_field_reports(self):
         url = reverse('product-detail', kwargs={'pk': self.blocked_product.pk})
         response = self.client.get(url, format='json')
-        self.assertEqual(response.data.get('blocking_reason').get('title'), self.blocking_reason.title)
+        self.assertEqual(response.data.get('blocking_reason_id'), str(self.blocking_reason.id))
+        self.assertEqual(response.data.get('blocking_reason_title'), self.blocking_reason.title)
         self.assertEqual(response.data.get('field_reports')[0].get('field_name'), self.field_report.field_name)
 
     def test_get_others_product_returns_404(self):
@@ -1460,6 +1462,11 @@ class ModerationEventsAPITestCase(APITestCase):
             field_name='description',
             comment='Existing report'
         )
+        # Создаем BlockingReason заранее
+        blocking_reason = BlockingReason.objects.create(
+            title='Minor violation',
+            comment='Product needs minor corrections'
+        )
         
         event_data = {
             'idempotency_key': str(self.idempotency_key),
@@ -1468,10 +1475,8 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Soft block due to minor issues',
             'hard_block': False,
-            'blocking_reason': {
-                'title': 'Minor violation',
-                'comment': 'Product needs minor corrections'
-            },
+            'blocking_reason_id': str(blocking_reason.pk),
+            'blocking_reason_title': 'Minor violation',
             'field_reports': [
                 {
                     'field_name': 'description',
@@ -1514,6 +1519,11 @@ class ModerationEventsAPITestCase(APITestCase):
             seller=self.seller,
             status=ProductStatus.MODERATED
         )
+        # Создаем BlockingReason заранее
+        blocking_reason = BlockingReason.objects.create(
+            title='Severe violation',
+            comment='Product violates major policies'
+        )
         
         event_data = {
             'idempotency_key': str(self.idempotency_key),
@@ -1522,10 +1532,8 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Hard block due to severe violation',
             'hard_block': True,
-            'blocking_reason': {
-                'title': 'Severe violation',
-                'comment': 'Product violates major policies'
-            },
+            'blocking_reason_id': str(blocking_reason.pk),
+            'blocking_reason_title': 'Severe violation',
             'field_reports': []
         }
         
@@ -1589,6 +1597,11 @@ class ModerationEventsAPITestCase(APITestCase):
             seller=self.seller,
             status=ProductStatus.MODERATED
         )
+        # Создаем BlockingReason заранее
+        blocking_reason = BlockingReason.objects.create(
+            title='First block reason',
+            comment='First comment'
+        )
         
         # Первым событием заблокируем товар
         event_data = {
@@ -1598,10 +1611,8 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'First block event',
             'hard_block': False,
-            'blocking_reason': {
-                'title': 'First block reason',
-                'comment': 'First comment'
-            },
+            'blocking_reason_id': str(blocking_reason.pk),
+            'blocking_reason_title': 'First block reason',
             'field_reports': [
                 {'field_name': 'title', 'comment': 'Bad title'}
             ]
@@ -1649,13 +1660,13 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Block without reason',
             'hard_block': False,
-            # blocking_reason отсутствует
+            # blocking_reason_id и blocking_reason_title отсутствуют
             'field_reports': []
         }
         
         response = self.client.post(self.url, event_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('blocking_reason', str(response.data))
+        self.assertIn('blocking_reason_id', str(response.data))
 
     def test_moderation_event_nonexistent_product_returns_404(self):
         """Событие с несуществующим product_id возвращает 404"""
