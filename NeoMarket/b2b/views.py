@@ -146,6 +146,75 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             raise ValidationError({'pk': 'Неверный формат UUID.'}) # Вернет HTTP 400
             
         return super().get_object()
+        
+    def delete(self, request, *args, **kwargs):
+        pk = self.kwargs.get('pk')
+        try:
+            product = Product.objects.get(id=pk)
+        except Product.DoesNotExist:
+            return Response(
+                {"code": "NOT_FOUND", "message": "Product not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if product.seller != request.user:
+            return Response(
+                {"code": "NOT_OWNER", "message": "Product does not belong to the authenticated seller"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if product.deleted:
+            return Response(
+                {"code": "INVALID_REQUEST", "message": "Product already deleted"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        product.deleted = True
+        product.save()
+
+        self._notify_moderation(product)
+        self._notify_b2c(product)
+
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+    def _notify_moderation(self, product):
+        import requests
+        from django.conf import settings
+        try:
+            requests.post(
+                f"{settings.MODERATION_URL}/api/v1/events/product",
+                json={
+                    "idempotency_key": str(uuid.uuid4()),
+                    "product_id": str(product.id),
+                    "seller_id": str(product.seller.id),
+                    "event": "DELETED",
+                    "date": timezone.now().isoformat(),
+                },
+                headers={"X-Service-Key": settings.SERVICE_TOKEN},
+                timeout=5,
+            )
+        except Exception:
+            pass
+
+    def _notify_b2c(self, product):
+        import requests
+        from django.conf import settings
+        sku_ids = list(product.skus.values_list('id', flat=True))
+        try:
+            requests.post(
+                f"{settings.B2C_URL}/api/v1/events/product",
+                json={
+                    "idempotency_key": str(uuid.uuid4()),
+                    "event": "PRODUCT_DELETED",
+                    "product_id": str(product.id),
+                    "sku_ids": [str(s) for s in sku_ids],
+                    "date": timezone.now().isoformat(),
+                },
+                headers={"X-Service-Key": settings.SERVICE_TOKEN},
+                timeout=5,
+            )
+        except Exception:
+            pass    
 
 
 class B2CListProductAPIView(generics.ListAPIView):
