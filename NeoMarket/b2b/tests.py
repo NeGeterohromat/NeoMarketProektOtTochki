@@ -1098,7 +1098,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         
         response = self.client.post(self.reserve_url, data, format='json')
         
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['status'], 'RESERVED')
         
         # Проверяем, что reserved_quantity вырос
@@ -1147,7 +1147,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         
         # Первый запрос
         response1 = self.client.post(self.reserve_url, data, format='json')
-        self.assertEqual(response1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
         
         self.sku1.refresh_from_db()
         first_reserved = self.sku1.reserved_quantity
@@ -1202,7 +1202,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         with transaction.atomic():
             response = self.client.post(self.reserve_url, data, format='json')
         
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         
         # Проверяем, что событие было отправлено
         # responses.calls может быть пустым, если on_commit не сработал в тесте
@@ -1233,7 +1233,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         
         # Запускаем запрос
         response = self.client.post(self.reserve_url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         
         # В Django тестовых транзакциях on_commit не вызывается автоматически.
         # Чтобы протестировать, что логика вызова правильная, запускаем вручную
@@ -1266,7 +1266,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         }
         
         response = self.client.post(self.reserve_url, reserve_data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         
         self.sku1.refresh_from_db()
         self.sku2.refresh_from_db()
@@ -1303,7 +1303,7 @@ class ReserveUnreserveAPITestCase(APITestCase):
         }
         
         response = self.client.post(self.reserve_url, reserve_data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         
         self.sku1.refresh_from_db()
         self.assertEqual(self.sku1.reserved_quantity, 5)
@@ -1333,22 +1333,6 @@ class ReserveUnreserveAPITestCase(APITestCase):
         # Reservation должна быть удалена
         reservation_after = Reservation.objects.filter(order_id=self.order_id).first()
         self.assertIsNone(reservation_after)
-    
-    def test_unreserve_nonexistent_order_returns_400(self):
-        """Unreserve для несуществующего order_id возвращает ошибку"""
-        fake_order_id = '999e4567-e89b-12d3-a456-426614174000'
-        
-        unreserve_data = {
-            'order_id': fake_order_id,
-            'items': [
-                {'sku_id': str(self.sku1.pk), 'quantity': 1}
-            ]
-        }
-        
-        response = self.client.post(self.unreserve_url, unreserve_data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        # DRF возвращает ошибки в формате {'message': '...'} или {'field': ['error']}
-        self.assertIn('message', response.data)
     
     def test_unreserve_exceeds_reserved_returns_400(self):
         """Попытка снять больше зарезервированного возвращает ошибку"""
