@@ -363,7 +363,9 @@ class ProductRetrieveAPITestCase(APITestCase):
                                       cost_price=10, article="hello", reserved_quantity=999)
         self.blocked_product = Product.objects.create(title='string', description='string',
                                               category=self.category, seller=self.user, status="BLOCKED")
-        self.blocking_reason = BlockingReason.objects.create(product=self.blocked_product, title='string', comment='string')
+        self.blocking_reason = BlockingReason.objects.create(title='string', comment='string')
+        self.blocked_product.blocking_reason = self.blocking_reason
+        self.blocked_product.save()
         self.field_report = FieldReport.objects.create(product=self.blocked_product, field_name='string', comment='string')
         
     def test_get_blocked_product_returns_blocking_reason_with_title_and_comment(self):
@@ -1404,10 +1406,11 @@ class ModerationEventsAPITestCase(APITestCase):
             status=ProductStatus.BLOCKED
         )
         blocking_reason = BlockingReason.objects.create(
-            product=product,
             title='Violates policies',
             comment='Product description violates rules'
         )
+        product.blocking_reason = blocking_reason
+        product.save()
         field_report1 = FieldReport.objects.create(
             product=product,
             field_name='description',
@@ -1436,8 +1439,8 @@ class ModerationEventsAPITestCase(APITestCase):
         product.refresh_from_db()
         self.assertEqual(product.status, ProductStatus.MODERATED)
         
-        # Проверяем, что blocking_reason удален
-        self.assertFalse(BlockingReason.objects.filter(product=product).exists())
+        # Проверяем, что blocking_reason сброшен на NULL
+        self.assertIsNone(product.blocking_reason)
         
         # Проверяем, что field_reports удалены
         self.assertFalse(FieldReport.objects.filter(product=product).exists())
@@ -1488,9 +1491,9 @@ class ModerationEventsAPITestCase(APITestCase):
         product.refresh_from_db()
         self.assertEqual(product.status, ProductStatus.BLOCKED)
         
-        # Проверяем, что blocking_reason создан
-        self.assertTrue(BlockingReason.objects.filter(product=product).exists())
-        reason = BlockingReason.objects.get(product=product)
+        # Проверяем, что blocking_reason создан и привязан к продукту
+        self.assertIsNotNone(product.blocking_reason)
+        reason = product.blocking_reason
         self.assertEqual(reason.title, 'Minor violation')
         self.assertEqual(reason.comment, 'Product needs minor corrections')
         
@@ -1533,9 +1536,9 @@ class ModerationEventsAPITestCase(APITestCase):
         product.refresh_from_db()
         self.assertEqual(product.status, ProductStatus.HARD_BLOCKED)
         
-        # Проверяем, что blocking_reason создан
-        self.assertTrue(BlockingReason.objects.filter(product=product).exists())
-        reason = BlockingReason.objects.get(product=product)
+        # Проверяем, что blocking_reason создан и привязан к продукту
+        self.assertIsNotNone(product.blocking_reason)
+        reason = product.blocking_reason
         self.assertEqual(reason.title, 'Severe violation')
         
         # Проверяем, что field_reports очищены
@@ -1610,8 +1613,7 @@ class ModerationEventsAPITestCase(APITestCase):
         
         product.refresh_from_db()
         self.assertEqual(product.status, ProductStatus.BLOCKED)
-        first_reason = BlockingReason.objects.get(product=product)
-        first_reason_title = first_reason.title
+        first_reason_title = product.blocking_reason.title if product.blocking_reason else None
         
         # Второй запрос с тем же idempotency_key - должен вернуть 204 без изменений
         response2 = self.client.post(self.url, event_data, format='json')
@@ -1622,8 +1624,7 @@ class ModerationEventsAPITestCase(APITestCase):
         self.assertEqual(product.status, ProductStatus.BLOCKED)
         
         # blocking_reason не должен измениться
-        reason_after = BlockingReason.objects.get(product=product)
-        self.assertEqual(reason_after.title, first_reason_title)
+        self.assertEqual(product.blocking_reason.title, first_reason_title)
         
         # Проверим, что ModerationEvent не дублируется
         event_count = ModerationEvent.objects.filter(

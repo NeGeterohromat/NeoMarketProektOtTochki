@@ -59,6 +59,14 @@ class Product(UUIDModel):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     views = models.PositiveIntegerField(blank=True, default=0)
+    blocking_reason = models.ForeignKey(
+        'BlockingReason',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+        verbose_name="Причина блокировки"
+    )
 
     class Meta:
         verbose_name = "Товар"
@@ -248,7 +256,6 @@ class InvoiceItem(UUIDModel):
 
 
 class BlockingReason(UUIDModel):
-    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name="blocking_reason")
     title = models.CharField(max_length=255)
     comment = models.TextField()
 

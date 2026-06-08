@@ -309,8 +309,7 @@ class SellerProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True)
     characteristics = ProductCharacteristicsSerializer(many=True)
     skus = SKUDetailSerializer(many=True)
-    blocking_reason = BlockingReasonSerializer(default=None)
-    # blocking_reason_id = serializers.PrimaryKeyRelatedField(source='blocking_reason', read_only=True)
+    blocking_reason = BlockingReasonSerializer(allow_null=True)
     field_reports = FieldReportSerializer(many=True, default=list)
     blocked = serializers.SerializerMethodField()
     class Meta:
@@ -619,31 +618,25 @@ class ModerationEventSerializer(serializers.ModelSerializer):
 
             # проверка типа события
             if event_type_data == ModerationEvent.EventType.MODERATED:
-                # Удаляем blocking_reason, если он существует
-                try:
-                    product.blocking_reason.delete()
-                except BlockingReason.DoesNotExist:
-                    pass
+                # Сбрасываем blocking_reason на NULL
+                product.blocking_reason = None
                 # удалить все field reports
                 product.field_reports.all().delete()
-                # обновляем толкьо статус, т.к. blocked вычисляется само от статуса
+                # обновляем только статус, т.к. blocked вычисляется само от статуса
                 product.status = ProductStatus.MODERATED
-                product.save(update_fields=['status'])
+                product.save(update_fields=['status', 'blocking_reason'])
             elif event_type_data == ModerationEvent.EventType.BLOCKED:
                 if not blocking_reason_data:
                     raise serializers.ValidationError({
                         'blocking_reason': 'Необходимо указать причину блокировки'
                     })
-                # Удаляем старый blocking_reason, если он существует
-                try:
-                    product.blocking_reason.delete()
-                except BlockingReason.DoesNotExist:
-                    pass
-                BlockingReason.objects.create(
-                    product=product,
+                # Создаем новую причину блокировки
+                blocking_reason = BlockingReason.objects.create(
                     title=blocking_reason_data['title'],
                     comment=blocking_reason_data['comment'],
                 )
+                # Устанавливаем Foreign Key на продукт
+                product.blocking_reason = blocking_reason
                 product.field_reports.all().delete()
                 field_reports_objects = [
                     FieldReport(product=product, **report_data)
@@ -652,7 +645,7 @@ class ModerationEventSerializer(serializers.ModelSerializer):
                 FieldReport.objects.bulk_create(field_reports_objects)
                 
                 product.status = ProductStatus.HARD_BLOCKED if is_hard_blocked else ProductStatus.BLOCKED
-                product.save(update_fields=['status'])
+                product.save(update_fields=['status', 'blocking_reason'])
 
             moderation_event = ModerationEvent.objects.create(**validated_data)
         
