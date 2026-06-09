@@ -1,10 +1,11 @@
 import uuid
 
-from django.db.models import Min, F, Prefetch
+from django.db.models import Min, F, Prefetch, Count, Sum, IntegerField
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from rest_framework import viewsets, generics, permissions, status, filters as drf_filters
+from rest_framework import viewsets, generics, permissions, status, filters as drf_filters, serializers
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import ValidationError
@@ -22,6 +23,7 @@ from .serializers import (
     CategoryDetailSerializer,
     ProductCreateUpdateSerializer,
     ProductDetailSerializer,
+    SellerProductListSerializer,
     SellerProductDetailSerializer,
     ModeratorProductDetailSerializer,
     SKUCreateSerializer,
@@ -62,10 +64,46 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return serializer_class 
     
 
-class ProductCreateAPIView(generics.CreateAPIView):
+class ProductCreateAPIView(generics.ListCreateAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductCreateUpdateSerializer
     permission_classes = [permissions.IsAuthenticated,]
+    pagination_class = B2CProductPagination
+
+    def get_queryset(self):
+        queryset = Product.objects.filter(seller=self.request.user)
+
+        include_deleted = self.request.query_params.get('include_deleted', self.request.query_params.get('deleted', 'false'))
+        if not self._is_truthy(include_deleted):
+            queryset = queryset.filter(deleted=False)
+
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(title__icontains=search)
+
+        return (
+            queryset.select_related('category')
+            .prefetch_related(
+                Prefetch('images', queryset=ProductImage.objects.order_by('ordering'))
+            )
+            .annotate(
+                skus_count=Count('skus', distinct=True),
+                total_active_quantity=Coalesce(
+                    Sum(F('skus__stock_quantity') - F('skus__reserved_quantity'), output_field=IntegerField()),
+                    0,
+                ),
+            )
+            .order_by('-created_at')
+        )
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return ProductCreateUpdateSerializer
+        return SellerProductListSerializer
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -74,10 +112,13 @@ class ProductCreateAPIView(generics.CreateAPIView):
         response_serializer = ProductDetailSerializer(product, context=self.get_serializer_context())
         headers = self.get_success_headers(serializer.data)
         return Response(
-            response_serializer.data, 
-            status=status.HTTP_201_CREATED, 
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
             headers=headers
         )
+
+    def _is_truthy(self, value):
+        return str(value).lower() in {'1', 'true', 'yes', 'on'}
     
 
 @extend_schema_view(

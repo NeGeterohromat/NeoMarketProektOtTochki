@@ -143,6 +143,107 @@ class ProductCreateAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class SellerProductListAPITestCase(APITestCase):
+    def setUp(self):
+        self.seller = User.objects.create_user(
+            username='seller',
+            password='12345678User',
+            email='seller@mail.com',
+            company_name='urfu',
+        )
+        self.other_seller = User.objects.create_user(
+            username='seller2',
+            password='12345678User',
+            email='seller2@mail.com',
+            company_name='urfu',
+        )
+
+        token = RefreshToken.for_user(self.seller)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        self.category = Category.objects.create(name='category-list')
+        self.url = reverse('product-create')
+
+        self.own_product = Product.objects.create(
+            title='iPhone 15',
+            description='Own product',
+            category=self.category,
+            seller=self.seller,
+            status='MODERATED',
+            deleted=False,
+        )
+        self.other_product = Product.objects.create(
+            title='Samsung Galaxy',
+            description='Other seller product',
+            category=self.category,
+            seller=self.other_seller,
+            status='MODERATED',
+            deleted=False,
+        )
+        self.deleted_product = Product.objects.create(
+            title='Deleted Product',
+            description='Deleted product',
+            category=self.category,
+            seller=self.seller,
+            status='BLOCKED',
+            deleted=True,
+        )
+        self.blocked_product = Product.objects.create(
+            title='Blocked Product',
+            description='Blocked product',
+            category=self.category,
+            seller=self.seller,
+            status='BLOCKED',
+            deleted=False,
+        )
+
+        SKU.objects.create(product=self.own_product, name='Base', price=100000, stock_quantity=5, reserved_quantity=1)
+        SKU.objects.create(product=self.own_product, name='Pro', price=120000, stock_quantity=3, reserved_quantity=0)
+
+    def test_list_returns_only_own_products(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item['title'] for item in response.data['items']]
+        self.assertIn('iPhone 15', titles)
+        self.assertIn('Blocked Product', titles)
+        self.assertNotIn('Samsung Galaxy', titles)
+
+    def test_idor_query_param_seller_id_ignored(self):
+        response = self.client.get(self.url + f'?seller_id={self.other_seller.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item['title'] for item in response.data['items']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Samsung Galaxy', titles)
+
+    def test_deleted_products_visible_with_deleted_flag(self):
+        response = self.client.get(self.url + '?include_deleted=true')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item['title'] for item in response.data['items']]
+        self.assertIn('Deleted Product', titles)
+
+    def test_status_filter_works_correctly(self):
+        response = self.client.get(self.url + '?status=BLOCKED')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        items = response.data['items']
+        self.assertGreater(len(items), 0)
+        self.assertTrue(all(item['status'] == 'BLOCKED' for item in items))
+
+    def test_list_includes_sku_aggregations_for_own_product(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        own_item = next(item for item in response.data['items'] if item['title'] == 'iPhone 15')
+        self.assertEqual(own_item['skus_count'], 2)
+        self.assertEqual(own_item['total_active_quantity'], 7)
+
+    def test_search_by_title_case_insensitive(self):
+        response = self.client.get(self.url + '?search=iphone')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [item['title'] for item in response.data['items']]
+        self.assertIn('iPhone 15', titles)
+        self.assertNotIn('Samsung Galaxy', titles)
+
+
 class ProductUpdateAPITestCase(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
