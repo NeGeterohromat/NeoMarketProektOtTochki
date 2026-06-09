@@ -288,6 +288,20 @@ class FieldReportSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
+class SellerProductListSerializer(serializers.ModelSerializer):
+    category = serializers.SerializerMethodField()
+    images = ProductImageSerializer(many=True, read_only=True)
+    skus_count = serializers.IntegerField(read_only=True)
+    total_active_quantity = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Product
+        fields = ('id', 'title', 'status', 'category', 'images', 'skus_count', 'total_active_quantity', 'created_at')
+
+    def get_category(self, obj):
+        return {'id': str(obj.category_id), 'name': obj.category.name}
+
+
 class ProductDetailSerializer(serializers.ModelSerializer):
     images = ProductImageSerializer(many=True)
     characteristics = ProductCharacteristicsSerializer(many=True)
