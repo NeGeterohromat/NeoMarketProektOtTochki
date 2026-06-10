@@ -209,6 +209,17 @@ class SellerProductListAPITestCase(APITestCase):
         self.assertIn('Blocked Product', titles)
         self.assertNotIn('Samsung Galaxy', titles)
 
+    def test_list_response_matches_short_product_contract(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        own_item = next(item for item in response.data['items'] if item['title'] == 'iPhone 15')
+        self.assertIn('slug', own_item)
+        self.assertIn('deleted', own_item)
+        self.assertIn('category_id', own_item)
+        self.assertNotIn('category', own_item)
+        self.assertEqual(own_item['category_id'], str(self.category.pk))
+        self.assertFalse(own_item['deleted'])
+
     def test_idor_query_param_seller_id_ignored(self):
         response = self.client.get(self.url + f'?seller_id={self.other_seller.pk}')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
