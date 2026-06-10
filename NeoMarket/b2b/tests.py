@@ -1842,7 +1842,7 @@ class ProductDeleteAPITestCase(APITestCase):
     def test_delete_sets_deleted_true(self):
         url = reverse('product-detail', kwargs={'pk': self.product.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.product.refresh_from_db()
         self.assertTrue(self.product.deleted)
 
@@ -1868,32 +1868,32 @@ class ProductDeleteAPITestCase(APITestCase):
 
     @responses.activate
     def test_delete_emits_event_to_moderation(self):
-        mod_url = f"{settings.MODERATION_URL}/api/v1/events/product"
+        mod_url = f"{settings.MODERATION_URL}/api/v1/b2b/events"
         responses.add(method=responses.POST, url=mod_url, json={"status": "ok"}, status=200)
-        b2c_url = f"{settings.B2C_URL}/api/v1/events/product"
+        b2c_url = f"{settings.B2C_URL}/api/v1/b2b/events"
         responses.add(method=responses.POST, url=b2c_url, json={}, status=200)
         url = reverse('product-detail', kwargs={'pk': self.product.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         mod_calls = [c for c in responses.calls if settings.MODERATION_URL in c.request.url]
         self.assertEqual(len(mod_calls), 1)
         import json
         sent_body = json.loads(mod_calls[0].request.body)
-        self.assertEqual(sent_body['event'], 'DELETED')
-        self.assertEqual(sent_body['product_id'], str(self.product.pk))
+        self.assertEqual(sent_body['event_type'], 'PRODUCT_DELETED')
+        self.assertEqual(sent_body['payload']['product_id'], str(self.product.pk))
 
     @responses.activate
     def test_delete_emits_product_deleted_to_b2c(self):
-        mod_url = f"{settings.MODERATION_URL}/api/v1/events/product"
+        mod_url = f"{settings.MODERATION_URL}/api/v1/b2b/events"
         responses.add(method=responses.POST, url=mod_url, json={}, status=200)
-        b2c_url = f"{settings.B2C_URL}/api/v1/events/product"
+        b2c_url = f"{settings.B2C_URL}/api/v1/b2b/events"
         responses.add(method=responses.POST, url=b2c_url, json={"status": "ok"}, status=200)
         url = reverse('product-detail', kwargs={'pk': self.product.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         b2c_calls = [c for c in responses.calls if settings.B2C_URL in c.request.url]
         self.assertEqual(len(b2c_calls), 1)
         import json
         sent_body = json.loads(b2c_calls[0].request.body)
-        self.assertEqual(sent_body['event'], 'PRODUCT_DELETED')
-        self.assertIn('sku_ids', sent_body)        
+        self.assertEqual(sent_body['event_type'], 'PRODUCT_DELETED')
+        self.assertEqual(sent_body['payload']['product_id'], str(self.product.pk))
