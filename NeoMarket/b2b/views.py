@@ -175,46 +175,51 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
         self._notify_moderation(product)
         self._notify_b2c(product)
 
-        return Response({"ok": True}, status=status.HTTP_200_OK)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _notify_moderation(self, product):
         import requests
+        import logging
         from django.conf import settings
+        logger = logging.getLogger(__name__)
         try:
             requests.post(
-                f"{settings.MODERATION_URL}/api/v1/events/product",
+                f"{settings.MODERATION_URL}/api/v1/b2b/events",
                 json={
+                    "event_type": "PRODUCT_DELETED",
                     "idempotency_key": str(uuid.uuid4()),
-                    "product_id": str(product.id),
-                    "seller_id": str(product.seller.id),
-                    "event": "DELETED",
-                    "date": timezone.now().isoformat(),
+                    "occurred_at": timezone.now().isoformat(),
+                    "payload": {
+                        "product_id": str(product.id),
+                    }
                 },
                 headers={"X-Service-Key": settings.SERVICE_TOKEN},
                 timeout=5,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to notify moderation: {e}")
 
     def _notify_b2c(self, product):
         import requests
+        import logging
         from django.conf import settings
-        sku_ids = list(product.skus.values_list('id', flat=True))
+        logger = logging.getLogger(__name__)
         try:
             requests.post(
-                f"{settings.B2C_URL}/api/v1/events/product",
+                f"{settings.B2C_URL}/api/v1/b2b/events",
                 json={
+                    "event_type": "PRODUCT_DELETED",
                     "idempotency_key": str(uuid.uuid4()),
-                    "event": "PRODUCT_DELETED",
-                    "product_id": str(product.id),
-                    "sku_ids": [str(s) for s in sku_ids],
-                    "date": timezone.now().isoformat(),
+                    "occurred_at": timezone.now().isoformat(),
+                    "payload": {
+                        "product_id": str(product.id),
+                    }
                 },
                 headers={"X-Service-Key": settings.SERVICE_TOKEN},
                 timeout=5,
             )
-        except Exception:
-            pass    
+        except Exception as e:
+            logger.error(f"Failed to notify b2c: {e}")
 
 
 class B2CListProductAPIView(generics.ListAPIView):
