@@ -1,7 +1,7 @@
 import uuid
 
 from django.db.models import Min, F, Prefetch, Count, Sum, IntegerField
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Greatest
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -93,7 +93,14 @@ class ProductCreateAPIView(generics.ListCreateAPIView):
             .annotate(
                 skus_count=Count('skus', distinct=True),
                 total_active_quantity=Coalesce(
-                    Sum(F('skus__stock_quantity') - F('skus__reserved_quantity'), output_field=IntegerField()),
+                    Greatest(
+                        Coalesce(
+                            Sum(F('skus__stock_quantity') - F('skus__reserved_quantity'), output_field=IntegerField()),
+                            0,
+                        ),
+                        0,
+                        output_field=IntegerField(),
+                    ),
                     0,
                 ),
             )
