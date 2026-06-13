@@ -355,7 +355,7 @@ class B2CSKUDetailSerializer(serializers.ModelSerializer):
     active_quantity = serializers.SerializerMethodField()
     class Meta:
         model = SKU
-        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article',
+        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article', 'stock_quantity',
                   'discount', 'images', 'characteristics', 'created_at', 'updated_at')
         
     def get_active_quantity(self, obj):
@@ -366,11 +366,12 @@ class B2CListProductSerializer(serializers.ModelSerializer):
     skus = B2CSKUDetailSerializer(many=True)
     cover_image = serializers.SerializerMethodField()
     min_price = serializers.IntegerField()
+    images = ProductImageSerializer(many=True, read_only=True)
     
     class Meta:
         model = Product
         fields = ('id', 'seller_id', 'category_id', 'title', 'description', 'slug', 'cover_image', 'min_price',
-                  'status', 'characteristics', 'skus', 'created_at')
+                  'status', 'characteristics', 'skus', 'created_at', 'updated_at', 'images')
     
     def get_cover_image(self, obj):
         # images предзагружены через Prefetch с order_by('ordering')
@@ -594,12 +595,13 @@ class ModerationEventSerializer(serializers.Serializer):
     idempotency_key = serializers.UUIDField(write_only=True)
     product_id = serializers.UUIDField(write_only=True)
     event_type = serializers.ChoiceField(choices=ModerationEvent.EventType.choices)
-    moderator_id = serializers.UUIDField(write_only=True)
+    moderator_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     moderator_comment = serializers.CharField(write_only=True, required=False, allow_blank=True)
     hard_block = serializers.BooleanField(write_only=True, default=False)
     blocking_reason_id = serializers.UUIDField(required=False, allow_null=True)
     blocking_reason_title = serializers.CharField(required=False, allow_null=True, max_length=255)
     field_reports = FieldReportSerializer(many=True, default=list)
+    occurred_at = serializers.DateTimeField()
     
     class Meta:
         fields = ('idempotency_key', 'product_id', 'event_type', 'moderator_id', 'moderator_comment',
@@ -610,11 +612,11 @@ class ModerationEventSerializer(serializers.Serializer):
         blocking_reason_id = data.get('blocking_reason_id')
         blocking_reason_title = data.get('blocking_reason_title')
         
-        # Для события BLOCKED требуются blocking_reason_id и blocking_reason_title
+        # Для события BLOCKED требуются blocking_reason_id
         if event_type == ModerationEvent.EventType.BLOCKED:
-            if not blocking_reason_id or not blocking_reason_title:
+            if not blocking_reason_id:
                 raise serializers.ValidationError({
-                    'blocking_reason_id': 'Необходимо указать blocking_reason_id и blocking_reason_title для события BLOCKED'
+                    'blocking_reason_id': 'Необходимо указать blocking_reason_id для события BLOCKED'
                 })
         
         # Для события MODERATED эти поля не нужны (будут сброшены)
@@ -630,7 +632,7 @@ class ModerationEventSerializer(serializers.Serializer):
     
     def create(self, validated_data):
         blocking_reason_id = validated_data.pop('blocking_reason_id', None)
-        blocking_reason_title = validated_data.pop('blocking_reason_title', None)
+        blocking_reason_title = validated_data.pop('blocking_reason_title', '')
         field_reports_data = validated_data.pop('field_reports', [])
 
         event_type_data = validated_data['event_type']

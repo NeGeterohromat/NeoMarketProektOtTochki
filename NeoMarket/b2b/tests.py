@@ -1544,6 +1544,7 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Approved after review',
             'hard_block': False,
+            'occurred_at': '2024-01-15T10:30:00Z',
         }
         
         response = self.client.post(self.url, event_data, format='json')
@@ -1589,6 +1590,7 @@ class ModerationEventsAPITestCase(APITestCase):
             'hard_block': False,
             'blocking_reason_id': str(blocking_reason.pk),
             'blocking_reason_title': 'Minor violation',
+            'occurred_at': '2024-01-15T10:30:00Z',
             'field_reports': [
                 {
                     'field_name': 'description',
@@ -1646,6 +1648,7 @@ class ModerationEventsAPITestCase(APITestCase):
             'hard_block': True,
             'blocking_reason_id': str(blocking_reason.pk),
             'blocking_reason_title': 'Severe violation',
+            'occurred_at': '2024-01-15T10:30:00Z',
             'field_reports': []
         }
         
@@ -1725,6 +1728,7 @@ class ModerationEventsAPITestCase(APITestCase):
             'hard_block': False,
             'blocking_reason_id': str(blocking_reason.pk),
             'blocking_reason_title': 'First block reason',
+            'occurred_at': '2024-01-15T10:30:00Z',
             'field_reports': [
                 {'field_name': 'title', 'comment': 'Bad title'}
             ]
@@ -1772,6 +1776,7 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Block without reason',
             'hard_block': False,
+            'occurred_at': '2024-01-15T10:30:00Z',
             # blocking_reason_id и blocking_reason_title отсутствуют
             'field_reports': []
         }
@@ -1791,11 +1796,30 @@ class ModerationEventsAPITestCase(APITestCase):
             'moderator_id': str(self.moderator_id),
             'moderator_comment': 'Test event',
             'hard_block': False,
+            'occurred_at': '2024-01-15T10:30:00Z',
         }
         
         response = self.client.post(self.url, event_data, format='json')
         # Несуществующий товар должен вернуть 404
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_moderation_events_missing_service_key_returns_401(self):
+        """Запрос без X-Service-Key возвращает 401"""
+        # Убираем credentials
+        self.client.credentials()
+        
+        event_data = {
+            'idempotency_key': str(uuid.uuid4()),
+            'product_id': str(uuid.uuid4()),
+            'event_type': 'MODERATED',
+            'moderator_id': str(self.moderator_id),
+            'moderator_comment': 'Test event',
+            'hard_block': False,
+            'occurred_at': '2024-01-15T10:30:00Z',
+        }
+        
+        response = self.client.post(self.url, event_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 class ProductDeleteAPITestCase(APITestCase):
     def setUp(self):

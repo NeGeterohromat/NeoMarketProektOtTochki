@@ -286,7 +286,7 @@ class ModerationEvent(UUIDModel):
     moderator_id = models.UUIDField()
     moderator_comment = models.TextField()
     hard_block = models.BooleanField(default=False, blank=True)
-    occurred_at = models.DateTimeField(auto_now_add=True)    
+    occurred_at = models.DateTimeField()    
     # blocking_reason_id = models.ForeignKey(BlockingReason, on_delete=models.CASCADE, related_name="moderation_events")
     # field_reports = ...
     # возможно можно даже сократить некоторые поля, или наоборот добавить то что выше.
