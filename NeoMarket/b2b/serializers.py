@@ -355,7 +355,7 @@ class B2CSKUDetailSerializer(serializers.ModelSerializer):
     active_quantity = serializers.SerializerMethodField()
     class Meta:
         model = SKU
-        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article',
+        fields = ('id', 'product_id', 'name', 'price', 'active_quantity', 'article', 'stock_quantity',
                   'discount', 'images', 'characteristics', 'created_at', 'updated_at')
         
     def get_active_quantity(self, obj):
@@ -366,11 +366,12 @@ class B2CListProductSerializer(serializers.ModelSerializer):
     skus = B2CSKUDetailSerializer(many=True)
     cover_image = serializers.SerializerMethodField()
     min_price = serializers.IntegerField()
+    images = ProductImageSerializer(many=True, read_only=True)
     
     class Meta:
         model = Product
         fields = ('id', 'seller_id', 'category_id', 'title', 'description', 'slug', 'cover_image', 'min_price',
-                  'status', 'characteristics', 'skus', 'created_at')
+                  'status', 'characteristics', 'skus', 'created_at', 'updated_at', 'images')
     
     def get_cover_image(self, obj):
         # images предзагружены через Prefetch с order_by('ordering')
