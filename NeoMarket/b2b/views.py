@@ -15,7 +15,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view
 
 from django_filters import rest_framework as df_filters
 
-from app.models import Category, Product, SKU, Reservation, ProductImage, SKUImage
+from app.models import Category, Product, SKU, ProductStatus, Reservation, ProductImage, SKUImage
 from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
 from .serializers import (
@@ -215,6 +215,12 @@ class ProductRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             return Response(
                 {"code": "INVALID_REQUEST", "message": "Product already deleted"},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if product.status == ProductStatus.HARD_BLOCKED:
+            return Response(
+                {"code": "INVALID_REQUEST", "message": "Cannot delete hard-blocked product"},
+                status=status.HTTP_403_FORBIDDEN 
             )
 
         product.deleted = True

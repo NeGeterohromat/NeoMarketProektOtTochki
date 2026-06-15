@@ -1703,6 +1703,13 @@ class ModerationEventsAPITestCase(APITestCase):
         response_message = ' '.join(str(v) for v in response.data.values())
         self.assertIn('Cannot edit hard-blocked product', response_message)
 
+        # DELETE запрос должен вернуть 403
+        response = self.client.delete(url, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Проверяем, что ответ содержит сообщение об ошибке (проверяем любой ключ)
+        response_message = ' '.join(str(v) for v in response.data.values())
+        self.assertIn('Cannot delete hard-blocked product', response_message)
+
     def test_duplicate_event_same_idempotency_key_no_side_effects(self):
         """Повторное событие с тем же idempotency_key → 200 без изменений"""
         product = Product.objects.create(
