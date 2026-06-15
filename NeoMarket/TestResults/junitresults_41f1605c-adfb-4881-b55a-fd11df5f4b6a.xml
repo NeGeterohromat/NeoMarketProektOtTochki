@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="8" time="12.646" timestamp="2026-06-15T20:36:24.070894+05:00" hostname="WIN-T9HMN0FRTB7"><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_blocked_hard_sets_terminal_status" file="b2b\tests.py" line="1625" time="1.894"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_blocked_soft_saves_field_reports" file="b2b\tests.py" line="1562" time="0.897"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_duplicate_event_same_idempotency_key_no_side_effects" file="b2b\tests.py" line="1712" time="0.877"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_hard_blocked_product_rejects_seller_edits" file="b2b\tests.py" line="1674" time="5.051"><failure message="AssertionError: 204 != 403">self = &lt;b2b.tests.ModerationEventsAPITestCase testMethod=test_hard_blocked_product_rejects_seller_edits&gt;
+
+    def test_hard_blocked_product_rejects_seller_edits(self):
+        """PUT/DELETE от продавца на HARD_BLOCKED → 403"""
+        # Создаем HARD_BLOCKED товар
+        product = Product.objects.create(
+            title='Hard blocked product',
+            description='Cannot edit this',
+            category=self.category,
+            seller=self.seller,
+            status=ProductStatus.HARD_BLOCKED
+        )
+    
+        # Авторизуемся как продавец (не сервис)
+        token = RefreshToken.for_user(self.seller)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+    
+        url = reverse('product-detail', kwargs={'pk': product.pk})
+        update_data = {
+            'title': 'Attempted edit',
+            'description': 'Trying to edit hard blocked product',
+            'category_id': self.category.pk,
+            'images': [{'url': '/s3/image.jpg', 'ordering': 0}]
+        }
+    
+        # PUT запрос должен вернуть 403
+        response = self.client.put(url, update_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        # Проверяем, что ответ содержит сообщение об ошибке (проверяем любой ключ)
+        response_message = ' '.join(str(v) for v in response.data.values())
+        self.assertIn('Cannot edit hard-blocked product', response_message)
+    
+        # DELETE запрос должен вернуть 403
+        response = self.client.delete(url, format='json')
+&gt;       self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+E       AssertionError: 204 != 403
+
+b2b\tests.py:1708: AssertionError</failure><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Forbidden: /api/v1/products/c07ee4dc-b4df-4a54-919f-ebd2eb740f72/
+ERROR    b2b.views:views.py:248 Failed to notify moderation: HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /api/v1/b2b/events (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение"))
+ERROR    b2b.views:views.py:270 Failed to notify b2c: HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /api/v1/b2b/events (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=8080): Failed to establish a new connection: [WinError 10061] Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение"))
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderated_event_clears_blocking_data" file="b2b\tests.py" line="1511" time="0.869"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_event_missing_blocking_reason_returns_400" file="b2b\tests.py" line="1768" time="0.859"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Bad Request: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_event_nonexistent_product_returns_404" file="b2b\tests.py" line="1794" time="0.857"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Not Found: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_events_missing_service_key_returns_401" file="b2b\tests.py" line="1812" time="0.907"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Unauthorized: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

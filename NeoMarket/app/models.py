@@ -283,7 +283,7 @@ class ModerationEvent(UUIDModel):
     idempotency_key = models.UUIDField(unique=True)
     product_id = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="moderation_events")
     event_type = models.CharField(max_length=9, choices=EventType)
-    moderator_id = models.UUIDField()
+    moderator_id = models.UUIDField(null=True, blank=True)
     moderator_comment = models.TextField()
     hard_block = models.BooleanField(default=False, blank=True)
     occurred_at = models.DateTimeField()    
