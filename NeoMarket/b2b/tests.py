@@ -1928,3 +1928,148 @@ class ProductDeleteAPITestCase(APITestCase):
         sent_body = json.loads(b2c_calls[0].request.body)
         self.assertEqual(sent_body['event_type'], 'PRODUCT_DELETED')
         self.assertEqual(sent_body['payload']['product_id'], str(self.product.pk))
+
+
+class SKUDeleteAPITestCase(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user',
+            password='12345678User',
+            email='user@mail.com',
+            company_name='urfu',
+        )
+        self.other_user = User.objects.create_user(
+            username='user2',
+            password='12345678User',
+            email='user2@mail.com',
+            company_name='urfu',
+        )
+
+        token = RefreshToken.for_user(self.user)
+        access_token = str(token.access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        self.category = Category.objects.create(name='category-sku-delete')
+
+        self.product = Product.objects.create(
+            title='iPhone 15',
+            description='Smartphone',
+            category=self.category,
+            seller=self.user,
+            status='MODERATED'
+        )
+        self.sku = SKU.objects.create(
+            product=self.product,
+            name='128GB Black',
+            price=100000,
+            stock_quantity=10,
+            reserved_quantity=0,
+        )
+        self.sku2 = SKU.objects.create(
+            product=self.product,
+            name='256GB Black',
+            price=120000,
+            stock_quantity=5,
+            reserved_quantity=0,
+        )
+
+        self.other_product = Product.objects.create(
+            title='Samsung',
+            description='Phone',
+            category=self.category,
+            seller=self.other_user,
+            status='MODERATED'
+        )
+        self.other_sku = SKU.objects.create(
+            product=self.other_product,
+            name='Other SKU',
+            price=80000,
+            stock_quantity=10,
+        )
+
+    def test_delete_sku_succeeds(self):
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['ok'], True)
+        self.assertFalse(SKU.objects.filter(pk=self.sku.pk).exists())
+
+    def test_delete_sku_with_active_reserves_returns_409(self):
+        self.sku.reserved_quantity = 3
+        self.sku.save()
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data['code'], 'CONFLICT')
+        self.assertTrue(SKU.objects.filter(pk=self.sku.pk).exists())
+
+    def test_delete_sku_hard_blocked_product_returns_403(self):
+        self.product.status = ProductStatus.HARD_BLOCKED
+        self.product.save()
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['code'], 'FORBIDDEN')
+        self.assertTrue(SKU.objects.filter(pk=self.sku.pk).exists())
+
+    def test_delete_sku_not_found_returns_404(self):
+        url = reverse('sku-update', kwargs={'pk': 'aa712d8e-2e30-452c-b3bf-12806f5a0a3e'})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data['code'], 'NOT_FOUND')
+
+    def test_delete_others_sku_returns_403(self):
+        url = reverse('sku-update', kwargs={'pk': self.other_sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['code'], 'NOT_OWNER')
+
+    def test_last_sku_on_moderation_transitions_product_to_created(self):
+        self.product.status = ProductStatus.ON_MODERATION
+        self.product.save()
+        SKU.objects.filter(product=self.product).exclude(pk=self.sku.pk).delete()
+        self.assertEqual(self.product.skus.count(), 1)
+
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, ProductStatus.CREATED)
+
+    @patch('b2b.views.send_sku_out_of_stock_event')
+    def test_sku_out_of_stock_event_on_moderated_product(self, mock_send_event):
+        self.product.status = ProductStatus.MODERATED
+        self.product.save()
+        self.sku.stock_quantity = 10
+        self.sku.reserved_quantity = 0
+        self.sku.save()
+
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        mock_send_event.assert_called_once()
+
+    @responses.activate
+    def test_delete_last_sku_on_moderation_notifies_moderation(self):
+        self.product.status = ProductStatus.ON_MODERATION
+        self.product.save()
+        SKU.objects.filter(product=self.product).exclude(pk=self.sku.pk).delete()
+
+        mod_url = f"{settings.MODERATION_URL}/api/v1/b2b/events/"
+        responses.add(method=responses.POST, url=mod_url, json={"status": "ok"}, status=200)
+
+        url = reverse('sku-update', kwargs={'pk': self.sku.pk})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, ProductStatus.CREATED)
+
+        mod_calls = [c for c in responses.calls if mod_url in c.request.url]
+        self.assertEqual(len(mod_calls), 1)
+        import json
+        sent_body = json.loads(mod_calls[0].request.body)
+        self.assertEqual(sent_body['event_type'], 'PRODUCT_DELETED')
+        self.assertEqual(sent_body['payload']['product_id'], str(self.product.pk))

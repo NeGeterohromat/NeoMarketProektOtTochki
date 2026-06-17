@@ -18,6 +18,7 @@ from django_filters import rest_framework as df_filters
 from app.models import Category, Product, SKU, ProductStatus, Reservation, ProductImage, SKUImage
 from .permissions import CanCreateUpdateSKU, CanUpdateProduct, IsAuthenticatedOrService, IsSafeForModerator, IsService
 from .authentication import ServiceKeyAuthentication
+from .services import handle_product_moderation_status, send_sku_out_of_stock_event, send_product_blocked
 from .serializers import (
     CategorySerializer,
     CategoryDetailSerializer,
@@ -549,6 +550,73 @@ class SKUUpdateAPIView(generics.UpdateAPIView):
         
         response.data = response_serializer.data
         return response
+
+    def delete(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        try:
+            sku = SKU.objects.select_related('product').get(pk=pk)
+        except SKU.DoesNotExist:
+            return Response(
+                {"code": "NOT_FOUND", "message": "SKU not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if sku.product.seller != request.user:
+            return Response(
+                {"code": "NOT_OWNER", "message": "SKU does not belong to the authenticated seller"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if sku.product.status == ProductStatus.HARD_BLOCKED:
+            return Response(
+                {"code": "FORBIDDEN", "message": "Cannot delete SKU of hard-blocked product"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if sku.reserved_quantity > 0:
+            return Response(
+                {"code": "CONFLICT", "message": "Cannot delete SKU with active reserves"},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        product = sku.product
+        active_quantity = sku.stock_quantity - sku.reserved_quantity
+        product_status_before = product.status
+
+        if active_quantity > 0 and product_status_before == ProductStatus.MODERATED:
+            send_sku_out_of_stock_event(sku)
+
+        sku.delete()
+
+        remaining_skus = product.skus.count()
+        if remaining_skus == 0 and product_status_before == ProductStatus.ON_MODERATION:
+            product.status = ProductStatus.CREATED
+            product.save(update_fields=['status'])
+            self._notify_moderation_deleted(product)
+
+        return Response({"ok": True}, status=status.HTTP_200_OK)
+
+    def _notify_moderation_deleted(self, product):
+        import requests as http_requests
+        import logging
+        from django.conf import settings
+        logger = logging.getLogger(__name__)
+        try:
+            http_requests.post(
+                f"{settings.MODERATION_URL}/api/v1/b2b/events/",
+                json={
+                    "event_type": "PRODUCT_DELETED",
+                    "idempotency_key": str(uuid.uuid4()),
+                    "occurred_at": timezone.now().isoformat(),
+                    "payload": {
+                        "product_id": str(product.pk),
+                    }
+                },
+                headers={"X-Service-Key": settings.SERVICE_TOKEN},
+                timeout=5,
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify moderation about product deletion: {e}")
     
 
 class ReserveAPIView(generics.CreateAPIView):
