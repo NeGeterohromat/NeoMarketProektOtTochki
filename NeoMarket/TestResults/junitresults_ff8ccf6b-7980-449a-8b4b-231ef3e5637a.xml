@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="8" time="8.679" timestamp="2026-06-19T11:28:49.147656+05:00" hostname="WIN-T9HMN0FRTB7"><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_blocked_hard_sets_terminal_status" file="b2b\tests.py" line="1625" time="2.328"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_blocked_soft_saves_field_reports" file="b2b\tests.py" line="1562" time="0.868"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_duplicate_event_same_idempotency_key_no_side_effects" file="b2b\tests.py" line="1712" time="0.889"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_hard_blocked_product_rejects_seller_edits" file="b2b\tests.py" line="1674" time="0.980"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Forbidden: /api/v1/products/a7895bc9-e7df-4bc6-a8b9-c60dc62589fb/
+WARNING  django.request:log.py:253 Forbidden: /api/v1/products/a7895bc9-e7df-4bc6-a8b9-c60dc62589fb/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderated_event_clears_blocking_data" file="b2b\tests.py" line="1511" time="0.860"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_event_missing_blocking_reason_returns_400" file="b2b\tests.py" line="1768" time="0.847"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Bad Request: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_event_nonexistent_product_returns_404" file="b2b\tests.py" line="1794" time="0.833"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Not Found: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="b2b.tests.ModerationEventsAPITestCase" name="test_moderation_events_missing_service_key_returns_401" file="b2b\tests.py" line="1812" time="0.887"><system-out>--------------------------------- Captured Log ---------------------------------
+WARNING  django.request:log.py:253 Unauthorized: /api/v1/moderation/events/
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

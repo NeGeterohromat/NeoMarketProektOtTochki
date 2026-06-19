@@ -599,7 +599,6 @@ class ModerationEventSerializer(serializers.Serializer):
     moderator_comment = serializers.CharField(write_only=True, required=False, allow_blank=True)
     hard_block = serializers.BooleanField(write_only=True, default=False)
     blocking_reason_id = serializers.UUIDField(required=False, allow_null=True)
-    blocking_reason_title = serializers.CharField(required=False, allow_null=True, max_length=255)
     field_reports = FieldReportSerializer(many=True, default=list)
     occurred_at = serializers.DateTimeField()
     
@@ -666,11 +665,7 @@ class ModerationEventSerializer(serializers.Serializer):
                 try:
                     blocking_reason = BlockingReason.objects.get(id=blocking_reason_id)
                 except BlockingReason.DoesNotExist:
-                    # Создаем новую, если не найдена
-                    blocking_reason = BlockingReason.objects.create(
-                        title=blocking_reason_title,
-                        comment=moderator_comment,
-                    )
+                    raise serializers.ValidationError()
                 # Устанавливаем Foreign Key на продукт
                 product.blocking_reason = blocking_reason
                 product.field_reports.all().delete()
