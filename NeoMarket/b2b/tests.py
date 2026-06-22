@@ -1990,8 +1990,7 @@ class SKUDeleteAPITestCase(APITestCase):
     def test_delete_sku_succeeds(self):
         url = reverse('sku-update', kwargs={'pk': self.sku.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['ok'], True)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(SKU.objects.filter(pk=self.sku.pk).exists())
 
     def test_delete_sku_with_active_reserves_returns_409(self):
@@ -2032,7 +2031,7 @@ class SKUDeleteAPITestCase(APITestCase):
 
         url = reverse('sku-update', kwargs={'pk': self.sku.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         self.product.refresh_from_db()
         self.assertEqual(self.product.status, ProductStatus.CREATED)
@@ -2047,7 +2046,7 @@ class SKUDeleteAPITestCase(APITestCase):
 
         url = reverse('sku-update', kwargs={'pk': self.sku.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         mock_send_event.assert_called_once()
 
@@ -2062,7 +2061,7 @@ class SKUDeleteAPITestCase(APITestCase):
 
         url = reverse('sku-update', kwargs={'pk': self.sku.pk})
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         self.product.refresh_from_db()
         self.assertEqual(self.product.status, ProductStatus.CREATED)
