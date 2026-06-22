@@ -594,7 +594,7 @@ class SKUUpdateAPIView(generics.UpdateAPIView):
             product.save(update_fields=['status'])
             self._notify_moderation_deleted(product)
 
-        return Response({"ok": True}, status=status.HTTP_200_OK)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def _notify_moderation_deleted(self, product):
         import requests as http_requests
